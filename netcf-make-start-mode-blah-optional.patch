@@ -1,0 +1,54 @@
+From f62aa22beca8e8ce70e8fdbbe46a89ceedc8818d Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Mon, 27 Mar 2017 00:49:09 -0400
+Subject: [PATCH 2/2] make <start mode='blah'/>  optional
+
+There's no reason to require it when defining an interface (the config
+option it corresponds to is optional), and it isn't even output in the
+status of an interface.
+
+Resolves: https://bugzilla.redhat.com/1436300
+
+(cherry picked from commit 1b76d1d0a027f933f79cb250fc461488ab7ccfe4)
+---
+ data/xml/interface.rng | 24 +++++++++++++-----------
+ 1 file changed, 13 insertions(+), 11 deletions(-)
+
+diff --git a/data/xml/interface.rng b/data/xml/interface.rng
+index 8d70e8b..2221e0b 100644
+--- a/data/xml/interface.rng
++++ b/data/xml/interface.rng
+@@ -278,17 +278,19 @@
+   </define>
+ 
+   <define name="startmode">
+-    <element name="start">
+-      <attribute name="mode">
+-        <choice>
+-          <value>onboot</value>
+-          <value>none</value>
+-          <value>hotplug</value>
+-          <!-- Jim Fehlig lists the following that SuSe supports:
+-               manual, ifplug, nfsroot -->
+-        </choice>
+-      </attribute>
+-    </element>
++    <optional>
++      <element name="start">
++        <attribute name="mode">
++          <choice>
++            <value>onboot</value>
++            <value>none</value>
++            <value>hotplug</value>
++            <!-- Jim Fehlig lists the following that SuSe supports:
++                 manual, ifplug, nfsroot -->
++          </choice>
++        </attribute>
++      </element>
++    </optional
+   </define>
+ 
+   <!--
+-- 
+1.8.3.1
+

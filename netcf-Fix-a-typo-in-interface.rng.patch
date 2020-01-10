@@ -1,0 +1,30 @@
+From b8e97b8b97ba6147f663fbfdce1ddb585bd95c8e Mon Sep 17 00:00:00 2001
+From: Yalan Zhang <yalzhang@redhat.com>
+Date: Wed, 29 Mar 2017 17:08:03 +0800
+Subject: [PATCH] Fix a typo in interface.rng
+
+There is a typo introduced by netcf-make-start-mode-blah-optional.patch,
+it is described in https://bugzilla.redhat.com/show_bug.cgi?id=1436906
+Message-Id: <1490778483-13695-1-git-send-email-yalzhang@redhat.com>
+
+(cherry picked from commit 6836187a2ebe1382eb47d66ddf99fb664349a7b0)
+---
+ data/xml/interface.rng | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/data/xml/interface.rng b/data/xml/interface.rng
+index 2221e0b..f3e31c6 100644
+--- a/data/xml/interface.rng
++++ b/data/xml/interface.rng
+@@ -290,7 +290,7 @@
+           </choice>
+         </attribute>
+       </element>
+-    </optional
++    </optional>
+   </define>
+ 
+   <!--
+-- 
+1.8.3.1
+

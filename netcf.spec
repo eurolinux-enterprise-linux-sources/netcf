@@ -1,6 +1,6 @@
 Name:           netcf
 Version:        0.2.8
-Release:        2%{?dist}%{?extra_release}
+Release:        4%{?dist}%{?extra_release}
 Summary:        Cross-platform network configuration library
 
 Group:          System Environment/Libraries
@@ -22,6 +22,9 @@ BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 Patch001: netcf-call-aug_load-at-most-once-per-second.patch
 Patch002: netcf-optimize-aug_match-query-for-all-ifcfg-files-related.patch
+Patch003: netcf-redhat-support-vlan-devices-named-as-vlan-TAG.patch
+Patch004: netcf-make-start-mode-blah-optional.patch
+Patch005: netcf-Fix-a-typo-in-interface.rng.patch
 
 # Default to skipping autoreconf.  Distros can change just this one
 # line (or provide a command-line override) if they backport any
@@ -215,6 +218,13 @@ fi
 %{_libdir}/pkgconfig/netcf.pc
 
 %changelog
+* Wed Mar 29 2017 Laine Stump <laine@redhat.com> - 0.2.8-4
+ - resolve rhbz#1437021
+
+* Tue Mar 28 2017 Laine Stump <laine@redhat.com> - 0.2.8-3
+ - resolve rhbz#1286890
+ - resolve rhbz#1436300
+
 * Fri Jul 01 2016 Laine Stump <laine@redhat.com> - 0.2.8-2
  - resolve rhbz#1268382
  - resolve rhbz#1269613

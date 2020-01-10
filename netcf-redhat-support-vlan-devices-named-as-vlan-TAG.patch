@@ -1,0 +1,107 @@
+From 1a98ab3a0d95e0e7699de547e2c327c62197db8f Mon Sep 17 00:00:00 2001
+From: Leno Hou <lenohou@gmail.com>
+Date: Thu, 8 Dec 2016 21:04:15 +0800
+Subject: [PATCH 1/2] redhat: support vlan devices named as "vlan${TAG}"
+
+Since at least the version of initscripts that is in current
+RHEL6/CentOS6 (9.03.53) initscripts supports two different naming
+styles for vlan interfaces:
+
+   $PHYSDEV.$TAG, e.g. "eth0.52"
+   vlan$TAG, e.g. "vlan52"
+
+In the former case, both the physical device and the vlan tag are
+embedded in the vlan device name; in the latter case, only the vlan
+tag is embedded in the name, and initscripts (or NetworkManager) looks
+for the attribute PHYSDEV in the ifcfg file, and uses that as the
+physical device.
+
+netcf was originally written back in the days of RHEL5, and interfaces
+named "vlanXXX" weren't supported yet, so until now netcf has only
+recognized the old "eth0.42" style.
+
+This patch fixes that omission - existing vlan interfaces named
+"vlanXYZ" are now properly recognized, and new ones can be created.
+
+(NB: It is still odd that the digits at the end of the interface name
+must match the vlan tag, but there's unfortunately nothing that can be
+done about that, since there is no explicit variable in the ifcfg file
+that can be used to set the vlan tag.)
+
+ Resolves: https://bugzilla.redhat.com/1286890
+
+(cherry picked from commit 0f6596c3e2f914fd36a771421151f409924f65e2)
+
+Signed-off-by: Leno Hou <lenohou@gmail.com>
+---
+ data/xml/redhat-get.xsl | 21 ++++++++++++++++-----
+ data/xml/redhat-put.xsl | 21 ++++++++++++++++-----
+ 2 files changed, 32 insertions(+), 10 deletions(-)
+
+diff --git a/data/xml/redhat-get.xsl b/data/xml/redhat-get.xsl
+index ec56f01..a0bf180 100644
+--- a/data/xml/redhat-get.xsl
++++ b/data/xml/redhat-get.xsl
+@@ -46,11 +46,22 @@
+   </xsl:template>
+ 
+   <xsl:template name="vlan-interface-common">
+-    <xsl:variable name="iface" select="pathcomponent:escape(concat(vlan/interface/@name, '.', vlan/@tag))"/>
+-
+-    <xsl:attribute name="path">/files/etc/sysconfig/network-scripts/ifcfg-<xsl:value-of select="$iface"/></xsl:attribute>
+-    <node label="DEVICE" value="{$iface}"/>
+-    <node label="VLAN" value="yes"/>
++    <xsl:variable name="vlan-name" select="@name"/>
++      <xsl:choose>
++        <xsl:when test="contains($vlan-name, '.')">
++          <xsl:variable name="iface" select="pathcomponent:escape(concat(vlan/interface/@name, '.', vlan/@tag))"/>
++          <xsl:attribute name="path">/files/etc/sysconfig/network-scripts/ifcfg-<xsl:value-of select="$iface"/></xsl:attribute>
++          <node label="DEVICE" value="{$iface}"/>
++          <node label="VLAN" value="yes"/>
++        </xsl:when>
++        <xsl:otherwise>
++          <xsl:variable name="iface" select="/interface/@name"/>
++          <xsl:attribute name="path">/files/etc/sysconfig/network-scripts/ifcfg-<xsl:value-of select="$iface"/></xsl:attribute>
++          <node label="DEVICE" value="{$iface}"/>
++          <node label="PHYSDEV" value="{vlan/interface/@name}"/>
++          <node label="VLAN" value="yes"/>
++        </xsl:otherwise>
++      </xsl:choose>
+   </xsl:template>
+ 
+   <xsl:template name='bare-vlan-interface'>
+diff --git a/data/xml/redhat-put.xsl b/data/xml/redhat-put.xsl
+index ed56c66..2997621 100644
+--- a/data/xml/redhat-put.xsl
++++ b/data/xml/redhat-put.xsl
+@@ -56,11 +56,22 @@
+ 
+   <xsl:template name="vlan-device">
+     <xsl:variable name="name" select="node[@label = 'DEVICE']/@value"/>
+-    <xsl:variable name="device" select="substring-before($name, '.')"/>
+-    <xsl:variable name="tag" select="substring-after($name, '.')"/>
+-    <vlan tag="{$tag}">
+-      <interface name="{$device}"/>
+-    </vlan>
++    <xsl:choose>
++      <xsl:when test="contains($name, '.')">
++        <xsl:variable name="device" select="substring-before($name, '.')"/>
++        <xsl:variable name="tag" select="substring-after($name, '.')"/>
++        <vlan tag="{$tag}">
++          <interface name="{$device}"/>
++        </vlan>
++      </xsl:when>
++      <xsl:otherwise>
++        <xsl:variable name="device" select="node[@label = 'PHYSDEV']/@value"/>
++        <xsl:variable name="tag" select="translate($name, translate($name, '0123456789', ''), '')"/>
++        <vlan tag="{$tag}">
++          <interface name="{$device}"/>
++        </vlan>
++      </xsl:otherwise>
++    </xsl:choose>
+   </xsl:template>
+ 
+   <!--
+-- 
+1.8.3.1
+
