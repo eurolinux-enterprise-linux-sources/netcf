@@ -1,0 +1,36 @@
+From 576e913f6fbce1a3428ad16af2c3e94544b862e7 Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Wed, 22 Jan 2014 15:27:43 +0200
+Subject: [PATCH] fix autogen build error
+
+This is also required for the fix for:
+
+  https://bugzilla.redhat.com/show_bug.cgi?id=1044681
+
+A last minute change to the previous patch addressing a review comment
+managed to break an autogen, but I didn't notice because the error
+scrolled off the screen:
+
+checking for system init flavor... ./configure: line 32046: systemd: command not found
+
+(cherry picked from commit 9dabd473ce54a5264ae92a78d5e4019b864f6997)
+---
+ configure.ac | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/configure.ac b/configure.ac
+index 4dc415f..c9e0ad2 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -139,7 +139,7 @@ fi
+ 
+ AM_CONDITIONAL([NETCF_USE_INITSCRIPTS], test "$with_sysinit" = "initscripts")
+ AM_CONDITIONAL([NETCF_USE_SYSTEMD], test "$with_sysinit" = "systemd")
+-AM_CONDITIONAL([NETCF_TRANSACTION_SUPPORT], "$with_sysinit" != "none")
++AM_CONDITIONAL([NETCF_TRANSACTION_SUPPORT], test "$with_sysinit" != "none")
+ AC_MSG_RESULT($with_sysinit)
+ if test "$with_sysinit" != "none" && test "$with_driver" != "redhat"; then
+   AC_MSG_ERROR([netcf does not have support for $with_sysinit combined with the $with_driver driver])
+-- 
+1.8.3.1
+
