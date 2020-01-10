@@ -1,0 +1,58 @@
+From 08d26dd0ad8e7f234d85ea28f0a0a691dcb91c58 Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Mon, 19 Jan 2015 10:23:24 -0500
+Subject: [PATCH 07/13] when calling aug_get() escape special characters in components of paths
+
+Part of resolution for:
+
+  https://bugzilla.redhat.com/show_bug.cgi?id=1165966
+  (CVE-2014-8119)
+
+Use aug_escape_name_wrap() to escape any unquoted special characters
+in a component of the path sent to aug_get(). This isn't needed when
+the path being used is one returned from a call to aug_match() (those
+strings are already escaped by augeas), or when the unsanitized data
+is inside single quotes in an expression; after eliminating those two
+cases and cases where the string is a constant, there is only a single
+call to aug_get() left - in aug_get_mac().
+(cherry picked from commit 2b4ba71272eb9ff244db3f9cb2a787a79cd18b2e)
+---
+ src/dutil_linux.c |    9 ++++++++-
+ 1 files changed, 8 insertions(+), 1 deletions(-)
+
+diff --git a/src/dutil_linux.c b/src/dutil_linux.c
+index fa36e7c..a305e93 100644
+--- a/src/dutil_linux.c
++++ b/src/dutil_linux.c
+@@ -429,13 +429,19 @@ int aug_match_mac(struct netcf *ncf, const char *mac, char ***matches) {
+ /* Get the MAC address of the interface INTF */
+ int aug_get_mac(struct netcf *ncf, const char *intf, const char **mac) {
+     int r = -1;
++    char *escaped_intf = NULL;
+     char *path = NULL;
+     augeas *aug = get_augeas(ncf);
+ 
+     *mac = NULL;
+     ERR_BAIL(ncf);
+ 
+-    r = xasprintf(&path, "/files/sys/class/net/%s/address/content", intf);
++    r = aug_escape_name_wrap(ncf, aug, intf, &escaped_intf);
++    ERR_NOMEM(r < 0, ncf);
++
++    r = xasprintf(&path,
++                  "/files/sys/class/net/%s/address/content",
++                  escaped_intf ? escaped_intf : intf);
+     ERR_NOMEM(r < 0, ncf);
+ 
+     r = aug_get(aug, path, mac);
+@@ -444,6 +450,7 @@ int aug_get_mac(struct netcf *ncf, const char *intf, const char **mac) {
+     /* fallthrough intentional */
+  error:
+     FREE(path);
++    FREE(escaped_intf);
+     return r;
+ }
+ 
+-- 
+1.7.1
+

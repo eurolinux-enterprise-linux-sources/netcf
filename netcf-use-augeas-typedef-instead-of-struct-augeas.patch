@@ -1,0 +1,393 @@
+From 782cd0a3149348c5419b44ff29eed3b28245171f Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Fri, 6 Mar 2015 12:41:49 -0500
+Subject: [PATCH 02/13] use augeas typedef instead of "struct augeas"
+
+Required to prevent merge conflicts when backporting the patches to
+resolve:
+
+  https://bugzilla.redhat.com/show_bug.cgi?id=1165966
+  (CVE-2104-8119)
+
+I'm not sure why all definitions of augeas objects use struct augeas,
+as the typedef has existed longer than netcf has (since 2008 according
+to augeas git).
+(cherry picked from commit 487818c5d8ab6d3b7a4d9eb23ea012ecdeab439b)
+---
+ src/drv_debian.c  |    8 ++++----
+ src/drv_redhat.c  |   18 +++++++++---------
+ src/drv_suse.c    |   24 ++++++++++++------------
+ src/dutil_linux.c |   24 ++++++++++++------------
+ src/dutil_linux.h |    4 ++--
+ 5 files changed, 39 insertions(+), 39 deletions(-)
+
+diff --git a/src/drv_debian.c b/src/drv_debian.c
+index 59f0976..64160e7 100644
+--- a/src/drv_debian.c
++++ b/src/drv_debian.c
+@@ -1,7 +1,7 @@
+ /*
+  * drv_debian.c: the debian backend for netcf
+  *
+- * Copyright (C) 2009-2014 Red Hat Inc.
++ * Copyright (C) 2009-2015 Red Hat Inc.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -125,7 +125,7 @@ static bool is_bridge(struct netcf *ncf, const char *name) {
+ }
+ 
+ static int interface_deps(struct netcf *ncf, char ***slaves, const char *fmt, ...) {
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     char *path = NULL;
+     int r, nslaves = 0;
+     char **matches = NULL;
+@@ -273,7 +273,7 @@ static bool has_config(struct netcf *ncf, const char *name) {
+ static int uniq_device_names(struct netcf *ncf,
+                             int ndevs, char **devs,
+                             char ***intf) {
+-    struct augeas *aug;
++    augeas *aug;
+     int r;
+     int ndevnames = 0;
+     const char **devnames = NULL;
+@@ -500,7 +500,7 @@ struct netcf_if *drv_lookup_by_name(struct netcf *ncf, const char *name) {
+ static int aug_get_xml_for_intf(struct netcf *ncf,
+                                 xmlNodePtr array,
+                                 const char *name) {
+-    struct augeas *aug;
++    augeas *aug;
+     xmlNodePtr element = NULL, node = NULL;
+     char **matches = NULL;
+     char **intf = NULL;
+diff --git a/src/drv_redhat.c b/src/drv_redhat.c
+index d8a2cb1..14ed787 100644
+--- a/src/drv_redhat.c
++++ b/src/drv_redhat.c
+@@ -1,7 +1,7 @@
+ /*
+  * drv_redhat.c: the Red Hat distro family backend for netcf
+  *
+- * Copyright (C) 2009-2014 Red Hat Inc.
++ * Copyright (C) 2009-2015 Red Hat Inc.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -131,7 +131,7 @@ static char *find_ifcfg_path_by_hwaddr(struct netcf *ncf, const char *mac) {
+ 
+     int nhwaddr = 0, r;
+     char **hwaddr = NULL;
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+ 
+     aug = get_augeas(ncf);
+     ERR_BAIL(ncf);
+@@ -199,7 +199,7 @@ static char *find_ifcfg_path_by_device(struct netcf *ncf, const char *name) {
+  * in /etc/sysconfig/network-scripts/network-functions
+  */
+ static char *find_ifcfg_path(struct netcf *ncf, const char *name) {
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     char *path = NULL;
+     const char *mac = NULL;
+     int r, nmatches;
+@@ -245,7 +245,7 @@ static char *find_ifcfg_path(struct netcf *ncf, const char *name) {
+ static int uniq_ifcfg_paths(struct netcf *ncf,
+                             int ndevs, char **devs,
+                             char ***intf) {
+-    struct augeas *aug;
++    augeas *aug;
+     int r;
+     int ndevnames = 0;
+     const char **devnames = NULL;
+@@ -399,7 +399,7 @@ static int list_interface_ids(struct netcf *ncf,
+                               int maxnames, char **names,
+                               unsigned int flags,
+                               const char *id_attr) {
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     int nint = 0, nmatches = 0, nqualified = 0, result = 0, r;
+     char **intf = NULL, **matches = NULL;
+ 
+@@ -492,7 +492,7 @@ struct netcf_if *drv_lookup_by_name(struct netcf *ncf, const char *name) {
+  * xml/augeas.rng)
+  */
+ static xmlDocPtr aug_get_xml(struct netcf *ncf, int nint, char **intf) {
+-    struct augeas *aug;
++    augeas *aug;
+     xmlDocPtr result = NULL;
+     xmlNodePtr root = NULL, tree = NULL;
+     char **matches = NULL;
+@@ -534,7 +534,7 @@ static xmlDocPtr aug_get_xml(struct netcf *ncf, int nint, char **intf) {
+ static int aug_put_xml(struct netcf *ncf, xmlDocPtr xml) {
+     xmlNodePtr forest;
+     char *path = NULL, *lpath = NULL, *label = NULL, *value = NULL;
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     int result = -1;
+     int r;
+ 
+@@ -744,7 +744,7 @@ static bool is_bridge(struct netcf *ncf, const char *name) {
+ }
+ 
+ static int bridge_slaves(struct netcf *ncf, const char *name, char ***slaves) {
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     int r, nslaves = 0;
+ 
+     aug = get_augeas(ncf);
+@@ -775,7 +775,7 @@ static int bridge_slaves(struct netcf *ncf, const char *name, char ***slaves) {
+ static void rm_interface(struct netcf *ncf, const char *name) {
+     int r;
+     char *path = NULL;
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+ 
+     aug = get_augeas(ncf);
+     ERR_BAIL(ncf);
+diff --git a/src/drv_suse.c b/src/drv_suse.c
+index 2c127e0..a99b134 100644
+--- a/src/drv_suse.c
++++ b/src/drv_suse.c
+@@ -2,7 +2,7 @@
+  * drv_suse.c: the suse backend for netcf
+  *
+  * Copyright (C) 2010 Novell Inc.
+- * Copyright (C) 2009-2014 Red Hat Inc.
++ * Copyright (C) 2009-2015 Red Hat Inc.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -141,7 +141,7 @@ static int is_slave(struct netcf *ncf, const char *intf) {
+ }
+ 
+ static bool has_ifcfg_file(struct netcf *ncf, const char *name) {
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     char *path = NULL;
+     int nmatches = 0, r;
+ 
+@@ -251,7 +251,7 @@ static int find_hwaddr_by_device(struct netcf *ncf, const char *name,
+                                  const char **addr) {
+     int nmatches = 0, r;
+     char **matches = NULL;
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     char *path = NULL;
+ 
+     aug = get_augeas(ncf);
+@@ -282,7 +282,7 @@ static int find_hwaddr_by_device(struct netcf *ncf, const char *name,
+  * in /etc/sysconfig/network-scripts/network-functions
+  */
+ static char *find_ifcfg_path(struct netcf *ncf, const char *name) {
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     char *path = NULL;
+     int r, nmatches;
+ 
+@@ -307,7 +307,7 @@ static char *find_ifcfg_path(struct netcf *ncf, const char *name) {
+ 
+ static int list_interfaces(struct netcf *ncf, char ***intf) {
+     int nint = 0, result = 0;
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+ 
+     aug = get_augeas(ncf);
+     ERR_BAIL(ncf);
+@@ -388,7 +388,7 @@ void drv_entry(struct netcf *ncf) {
+ static int list_interface_ids(struct netcf *ncf,
+                               int maxnames, char **names,
+                               unsigned int flags) {
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     int nint = 0, nqualified = 0, result = 0;
+     char **intf = NULL;
+ 
+@@ -444,7 +444,7 @@ struct netcf_if *drv_lookup_by_name(struct netcf *ncf, const char *name) {
+     struct netcf_if *nif = NULL;
+     char *pathx = NULL;
+     char *name_dup = NULL;
+-    struct augeas *aug;
++    augeas *aug;
+ 
+     aug = get_augeas(ncf);
+     ERR_BAIL(ncf);
+@@ -475,7 +475,7 @@ struct netcf_if *drv_lookup_by_name(struct netcf *ncf, const char *name) {
+  * xml/augeas.rng)
+  */
+ static xmlDocPtr aug_get_xml(struct netcf_if *nif, int nint, char **intf) {
+-    struct augeas *aug;
++    augeas *aug;
+     xmlDocPtr result = NULL;
+     xmlNodePtr root = NULL, tree = NULL;
+     char **matches = NULL;
+@@ -538,7 +538,7 @@ static int aug_put_xml(struct netcf *ncf, xmlDocPtr xml) {
+     char *path = NULL, *lpath = NULL, *label = NULL, *value = NULL;
+     char *device = NULL, *mac = NULL, *gateway = NULL;
+     char **rules = NULL;
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     int result = -1, nrules = 0, ethphysical = 0;
+     int toplevel = 1;
+     int r;
+@@ -877,7 +877,7 @@ static bool is_bridge(struct netcf *ncf, const char *name) {
+ }
+ 
+ static int bridge_slaves(struct netcf *ncf, const char *name, char ***slaves) {
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     int r, nslaves = 0;
+ 
+     aug = get_augeas(ncf);
+@@ -909,7 +909,7 @@ static void rm_interface(struct netcf *ncf, const char *name) {
+     int r;
+     char *path = NULL;
+     char **rules = NULL;
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     int nrules = 0;
+ 
+     aug = get_augeas(ncf);
+@@ -1067,7 +1067,7 @@ int drv_undefine(struct netcf_if *nif) {
+ int drv_lookup_by_mac_string(struct netcf *ncf, const char *mac,
+                              int maxifaces, struct netcf_if **ifaces)
+ {
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     char *path = NULL, *ifcfg = NULL;
+     const char **names = NULL;
+     int nmatches = 0;
+diff --git a/src/dutil_linux.c b/src/dutil_linux.c
+index abe4577..3cb6f39 100644
+--- a/src/dutil_linux.c
++++ b/src/dutil_linux.c
+@@ -149,11 +149,11 @@ int remove_augeas_xfm_table(struct netcf *ncf,
+ /* Get the Augeas instance; if we already initialized it, just return
+  * it. Otherwise, create a new one and return that.
+  */
+-struct augeas *get_augeas(struct netcf *ncf) {
++augeas *get_augeas(struct netcf *ncf) {
+     int r;
+ 
+     if (ncf->driver->augeas == NULL) {
+-        struct augeas *aug;
++        augeas *aug;
+         char *path;
+ 
+         r = xasprintf(&path, "%s/lenses", ncf->data_dir);
+@@ -167,7 +167,7 @@ struct augeas *get_augeas(struct netcf *ncf) {
+     }
+ 
+     if (ncf->driver->copy_augeas_xfm) {
+-        struct augeas *aug = ncf->driver->augeas;
++        augeas *aug = ncf->driver->augeas;
+         /* Only look at a few config files */
+         r = aug_rm(aug, "/augeas/load/*");
+         ERR_THROW(r < 0, ncf, EOTHER, "aug_rm failed in get_augeas");
+@@ -189,7 +189,7 @@ struct augeas *get_augeas(struct netcf *ncf) {
+     }
+ 
+     if (ncf->driver->load_augeas) {
+-        struct augeas *aug = ncf->driver->augeas;
++        augeas *aug = ncf->driver->augeas;
+ 
+         r = aug_load(aug);
+         ERR_THROW(r < 0, ncf, EOTHER, "failed to load config files");
+@@ -219,7 +219,7 @@ int aug_save_assert(struct netcf *ncf)
+ {
+     int r = -1;
+     const char *err, *errmsg, *path = "unknown";
+-    struct augeas *aug = get_augeas(ncf);
++    augeas *aug = get_augeas(ncf);
+ 
+     ERR_BAIL(ncf);
+ 
+@@ -259,7 +259,7 @@ int aug_save_assert(struct netcf *ncf)
+ ATTRIBUTE_FORMAT(printf, 4, 5)
+ int defnode(struct netcf *ncf, const char *name, const char *value,
+                    const char *format, ...) {
+-    struct augeas *aug = get_augeas(ncf);
++    augeas *aug = get_augeas(ncf);
+     va_list ap;
+     char *expr = NULL;
+     int r = -1, created;
+@@ -284,7 +284,7 @@ int defnode(struct netcf *ncf, const char *name, const char *value,
+ 
+ int aug_fmt_set(struct netcf *ncf, const char *value, const char *fmt, ...)
+ {
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     char *path = NULL;
+     va_list args;
+     int r;
+@@ -312,7 +312,7 @@ int aug_fmt_set(struct netcf *ncf, const char *value, const char *fmt, ...)
+ 
+ int aug_fmt_rm(struct netcf *ncf, const char *fmt, ...)
+ {
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     char *path = NULL;
+     va_list args;
+     int r;
+@@ -340,7 +340,7 @@ int aug_fmt_rm(struct netcf *ncf, const char *fmt, ...)
+ }
+ 
+ int aug_fmt_match(struct netcf *ncf, char ***matches, const char *fmt, ...) {
+-    struct augeas *aug = NULL;
++    augeas *aug = NULL;
+     char *path = NULL;
+     va_list args;
+     int r;
+@@ -413,7 +413,7 @@ int aug_match_mac(struct netcf *ncf, const char *mac, char ***matches) {
+ int aug_get_mac(struct netcf *ncf, const char *intf, const char **mac) {
+     int r = -1;
+     char *path = NULL;
+-    struct augeas *aug = get_augeas(ncf);
++    augeas *aug = get_augeas(ncf);
+ 
+     *mac = NULL;
+     ERR_BAIL(ncf);
+@@ -436,7 +436,7 @@ int aug_get_mac(struct netcf *ncf, const char *intf, const char **mac) {
+  */
+ void modprobed_alias_bond(struct netcf *ncf, const char *name) {
+     char *path = NULL;
+-    struct augeas *aug = get_augeas(ncf);
++    augeas *aug = get_augeas(ncf);
+     int r, nmatches;
+ 
+     ERR_BAIL(ncf);
+@@ -475,7 +475,7 @@ void modprobed_alias_bond(struct netcf *ncf, const char *name) {
+ /* Remove the alias for NAME to the bonding module */
+ void modprobed_unalias_bond(struct netcf *ncf, const char *name) {
+     char *path = NULL;
+-    struct augeas *aug = get_augeas(ncf);
++    augeas *aug = get_augeas(ncf);
+     int r;
+ 
+     ERR_BAIL(ncf);
+diff --git a/src/dutil_linux.h b/src/dutil_linux.h
+index f63cc5a..5cfb5cd 100644
+--- a/src/dutil_linux.h
++++ b/src/dutil_linux.h
+@@ -34,7 +34,7 @@
+ #endif
+ 
+ struct driver {
+-    struct augeas     *augeas;
++    augeas     *augeas;
+     xsltStylesheetPtr  put;
+     xsltStylesheetPtr  get;
+     int                ioctl_fd;
+@@ -67,7 +67,7 @@ int remove_augeas_xfm_table(struct netcf *ncf,
+                             const struct augeas_xfm_table *table);
+ 
+ /* Get or create the augeas instance from NCF */
+-struct augeas *get_augeas(struct netcf *ncf);
++augeas *get_augeas(struct netcf *ncf);
+ 
+ /* Save changes in augeas and raise error with message on failure */
+ int aug_save_assert(struct netcf *ncf);
+-- 
+1.7.1
+

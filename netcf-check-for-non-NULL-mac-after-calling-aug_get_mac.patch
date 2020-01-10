@@ -1,0 +1,37 @@
+From 41cb0c3ee568c1784faf469d8f4e25e1388f86fc Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Wed, 26 Nov 2014 12:39:25 -0500
+Subject: [PATCH 04/13] check for non-NULL mac after calling aug_get_mac()
+
+Part of resolution for:
+
+  https://bugzilla.redhat.com/show_bug.cgi?id=1165966
+  (CVE-2104-8119)
+
+aug_get_mac returns 1 but mac = NULL when it doesn't find a
+match. find_ifcfg_path() had been only checking for a return > 0
+before using mac.
+
+All other uses of aug_get_mac() check the returned string as well as
+the return value.
+(cherry picked from commit bf3a8c403065201d2ec5838334bb98fc91fd14d8)
+---
+ src/drv_redhat.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/src/drv_redhat.c b/src/drv_redhat.c
+index fb7fca6..a90eeb6 100644
+--- a/src/drv_redhat.c
++++ b/src/drv_redhat.c
+@@ -219,7 +219,7 @@ static char *find_ifcfg_path(struct netcf *ncf, const char *name) {
+     /* Now find the config by MAC, matching on HWADDR */
+     r = aug_get_mac(ncf, name, &mac);
+     ERR_COND_BAIL(r < 0, ncf, EOTHER);
+-    if (r > 0) {
++    if (r > 0 && mac) {
+         path = find_ifcfg_path_by_hwaddr(ncf, mac);
+         ERR_BAIL(ncf);
+         if (path != NULL)
+-- 
+1.7.1
+

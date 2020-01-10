@@ -1,0 +1,115 @@
+From 8770ee07215dfff240bd84af84036069d0ad768d Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Fri, 27 Feb 2015 22:03:28 -0500
+Subject: [PATCH 12/13] eliminate netcf-specific sysconfig.aug lens
+
+This resolves:
+
+  https://bugzilla.redhat.com/show_bug.cgi?id=1208897
+
+Back in 2010 when netcf needed a separate augeas lens for files in
+sysconfig/network-scripts (e.g. the ifcfg-* files), augeas itself had
+no special purpose sysconfig.aug lens, so netcf has its own
+sysconfig.aug lens based on the shellvars.aug lens from augeas at the
+time. Sometime soon after that augeas got its own sysconfig.aug lens,
+but netcf never rid itself of its own copy.
+
+The sysconfig.aug in netcf is now severely out of date compared to the
+one in augeas, and is missing many bugfixes. This patch just removes
+the netcf version from /usr/share/netcf/lenses, so that augeas will
+use its own lens when it's called by netcf. Among other things, this
+updated lens properly ignores semicolons and "#"-initiated partial
+line comments at the ends of lines that contain valid variable
+settings at the beginning.
+
+This resolves:
+
+  https://bugzilla.redhat.com/show_bug.cgi?id=761246
+(cherry picked from commit f5dd51e65cccd24c7dfd8448b6c2f2aa2804ef92)
+---
+ Makefile.am               |    1 -
+ data/lenses/sysconfig.aug |   60 ---------------------------------------------
+ 2 files changed, 0 insertions(+), 61 deletions(-)
+ delete mode 100644 data/lenses/sysconfig.aug
+
+diff --git a/Makefile.am b/Makefile.am
+index d35fd18..d380ec8 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -19,7 +19,6 @@ dist_xml_DATA=data/xml/augeas.rng data/xml/interface.rng \
+ dist_netcf_DATA=data/iptables-forward-bridged
+ dist_lens_DATA= \
+ 	data/lenses/netcf.aug \
+-	data/lenses/sysconfig.aug \
+ 	data/lenses/persist_net_rules.aug \
+ 	data/lenses/routes.aug
+ 
+diff --git a/data/lenses/sysconfig.aug b/data/lenses/sysconfig.aug
+deleted file mode 100644
+index 9ee668e..0000000
+--- a/data/lenses/sysconfig.aug
++++ /dev/null
+@@ -1,60 +0,0 @@
+-(* Variation of the Shellvars lens                                     *)
+-(* Supports only what's needed to handle sysconfig files               *)
+-(* Modified to strip quotes. In the put direction, add double quotes   *)
+-(* around values that need them                                        *)
+-(* To keep things simple, we also do not support shell variable arrays *)
+-module Sysconfig =
+-  let eol = Util.eol
+-
+-  let key_re = /[A-Za-z0-9_]+(\[[0-9]+\])?/ - "unset" - "export"
+-  let eq = Util.del_str "="
+-  let comment = Util.comment
+-  let empty   = Util.empty
+-  let xchgs   = Build.xchgs
+-  let dels    = Util.del_str
+-
+-  let nothing = del /(""|'')?/ "" . value ""
+-
+-  (* Chars allowed in a bare string *)
+-  let bchar = /[^ \t\n\"'\\]|\\\\./
+-  let qchar = /["']/  (* " *)
+-
+-  (* We split the handling of right hand sides into a few cases:
+-   *   bare  - strings that contain no spaces, optionally enclosed in
+-   *           single or double quotes
+-   *   dquot - strings that contain at least one space or apostrophe,
+-   *           which must be enclosed in double quotes
+-   *   squot - strings that contain an unescaped double quote
+-   *)
+-  let bare = del qchar? "" . store (bchar+) . del qchar? ""
+-  let dquot =
+-    del qchar "\"" . store (bchar* . /[ \t']/ . bchar*)+ . del qchar "\""
+-  let squot =
+-    dels "'" . store ((bchar|/[ \t]/)* . "\"" . (bchar|/[ \t]/)*)+ . dels "'"
+-
+-  let export = [ key "export" . Util.del_ws_spc ]
+-  let kv (value:lens) = [ export? . key key_re . eq . value . eol ]
+-  let assign = kv nothing | kv bare | kv dquot | kv squot
+-
+-  let var_action (name:string) =
+-    [ xchgs name ("@" . name) . Util.del_ws_spc . store key_re . eol ]
+-
+-  let unset = var_action "unset"
+-  let bare_export = var_action "export"
+-
+-  let source =
+-    [
+-      del /\.|source/ "." . label ".source" .
+-      Util.del_ws_spc . store /[^= \t\n]+/ . eol
+-    ]
+-
+-  let lns = (comment | empty | source | assign | unset | bare_export) *
+-
+-(*
+-  Examples:
+-
+-  abc   -> abc -> abc
+-  "abc" -> abc -> abc
+-  "a b" -> a b -> "a b"
+-  'a"b' -> a"b -> 'a"b'
+-*)
+-- 
+1.7.1
+

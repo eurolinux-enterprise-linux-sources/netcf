@@ -1,0 +1,36 @@
+From cd5d9702085937c87b8d1921cd2746a5b0abf7bc Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Sat, 7 Mar 2015 10:44:03 -0500
+Subject: [PATCH 10/13] when calling aug_rm() escape special characters in components of paths
+
+Part of resolution for:
+
+  https://bugzilla.redhat.com/show_bug.cgi?id=1165966
+  (CVE-2014-8119)
+
+The paths given to all but one of the calls to aug_rm() either
+originate as a unit from augeas (and so they are already escaped) or
+the unsanitized bits are inside single quotes in an expression. Only
+one call needs escaping, again in drv_suse.c.
+(cherry picked from commit 2b9f6a4b450548f7f5d8cd85b6bb6f2970e183e0)
+---
+ src/drv_suse.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/src/drv_suse.c b/src/drv_suse.c
+index 62684bd..5f4b2fe 100644
+--- a/src/drv_suse.c
++++ b/src/drv_suse.c
+@@ -966,7 +966,8 @@ static void rm_interface(struct netcf *ncf, const char *name) {
+     /* The last or clause catches slaves of a bond that are enslaved to
+      * a bridge NAME */
+     r = xasprintf(&path, "%s/%s/ifcfg-%s",
+-                  aug_files, network_scripts_path, name);
++                  aug_files, network_scripts_path,
++                  escaped_name ? escaped_name : name);
+     ERR_NOMEM(r < 0, ncf);
+ 
+     r = aug_rm(aug, path);
+-- 
+1.7.1
+

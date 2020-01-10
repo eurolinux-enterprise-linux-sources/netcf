@@ -1,6 +1,6 @@
 Name:           netcf
 Version:        0.2.4
-Release:        1%{?dist}%{?extra_release}
+Release:        3%{?dist}%{?extra_release}
 Summary:        Cross-platform network configuration library
 
 Group:          System Environment/Libraries
@@ -12,7 +12,38 @@ BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 # Default to skipping autoreconf.  Distros can change just this one
 # line (or provide a command-line override) if they backport any
 # patches that touch configure.ac or Makefile.am.
-%{!?enable_autotools:%define enable_autotools 0}
+%{!?enable_autotools:%define enable_autotools 1}
+
+# Patches
+# One patch per line, in this format:
+# Patch001: file1.patch
+# Patch002: file2.patch
+# ...
+#
+# The patches will automatically be put into the build source tree
+# during the prep stage (using git, which is now required for an rpm
+# build)
+#
+
+Patch001: netcf-Fix-name-of-DHCPV6C-variable-in-ifcfg-files.patch
+Patch002: netcf-Fix-netmask-for-prefix-32.patch
+Patch003: netcf-Report-file-path-and-reason-when-aug_save-fails.patch
+Patch004: netcf-use-augeas-typedef-instead-of-struct-augeas.patch
+Patch005: netcf-remove-unnecessary-calls-to-get_augeas.patch
+Patch006: netcf-check-for-non-NULL-mac-after-calling-aug_get_mac.patch
+Patch007: netcf-check-for-valid-pointer-on-all-returns-from-aug_get.patch
+Patch008: netcf-local-copy-of-new-augeas-function-aug_escape_name.patch
+Patch009: netcf-when-calling-aug_get-escape-special-characters-in-co.patch
+Patch010: netcf-when-calling-aug_match-escape-special-characters-in-.patch
+Patch011: netcf-when-calling-aug_fmt_match-escape-special-characters.patch
+Patch012: netcf-when-calling-aug_rm-escape-special-characters-in-com.patch
+Patch013: netcf-escape-interface-name-in-path-generated-by-xsl-trans.patch
+Patch014: netcf-eliminate-netcf-specific-sysconfig.aug-lens.patch
+Patch015: netcf-Remove-extraneous-single-quotes-from-IPV6ADDR_SECOND.patch
+
+# git is used to build a source tree with patches applied (see the
+# prep section)
+BuildRequires: git
 
 # Fedora 20 / RHEL-7 are where netcf first uses systemd. Although earlier
 # Fedora has systemd, netcf still used sysvinit there.
@@ -87,6 +118,42 @@ The libraries for %{name}.
 
 %prep
 %setup -q
+
+# Patches have to be stored in a temporary file because RPM has
+# a limit on the length of the result of any macro expansion;
+# if the string is longer, it's silently cropped
+%{lua:
+    tmp = os.tmpname();
+    f = io.open(tmp, "w+");
+    count = 0;
+    for i, p in ipairs(patches) do
+        f:write(p.."\n");
+        count = count + 1;
+    end;
+    f:close();
+    print("PATCHCOUNT="..count.."\n")
+    print("PATCHLIST="..tmp.."\n")
+}
+
+git init -q
+git config user.name rpm-build
+git config user.email rpm-build
+git config gc.auto 0
+git add .
+git commit -q -a --author 'rpm-build <rpm-build>' \
+           -m '%{name}-%{version} base'
+
+COUNT=$(grep '\.patch$' $PATCHLIST | wc -l)
+if [ $COUNT -ne $PATCHCOUNT ]; then
+    echo "Found $COUNT patches in $PATCHLIST, expected $PATCHCOUNT"
+    exit 1
+fi
+if [ $COUNT -gt 0 ]; then
+    xargs git am <$PATCHLIST || exit 1
+fi
+echo "Applied $COUNT patches"
+rm -f $PATCHLIST
+
 
 %build
 %if %{with_libnl1}
@@ -169,6 +236,22 @@ fi
 %{_libdir}/pkgconfig/netcf.pc
 
 %changelog
+* Tue Apr 14 2015 Laine Stump <laine@redhat.com> - 0.2.4-3
+ - resolves rhbz#1208894
+ - Remove extraneous single quotes from IPV6ADDR_SECONDARIES
+ - resolves rhbz#1208897
+ - Bad parsing of network-scripts/ifcfg-xxxx files
+ - resolves rhbz#1165966
+ - resolves CVE-2014-8119
+ - augeas path expression injection via interface name
+
+* Mon Feb 09 2015 Laine Stump <laine@redhat.com> - 0.2.4-2
+ - resolves rhbz#1113978
+ - Fix name of DHCPV6C variable in ifcfg files
+ - resolves rhbz#1116314
+ - Fix netmask for prefix == 32
+ - apply patches to source with git rather than patch
+
 * Wed May 14 2014 Laine Stump <laine@redhat.com> - 0.2.4-1
  - rebase to netcf-0.2.4
  - resolves rhbz#851748

@@ -1,0 +1,244 @@
+From 589e71d6c38e7e4b0956dcd4a921d4caf3edde1a Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Wed, 13 Aug 2014 12:57:09 -0400
+Subject: [PATCH 1/2] Fix name of DHCPV6C variable in ifcfg files
+
+This is a *very* longstanding bug, which shows that nobody using DHCP
+on IPv6 is using netcf - the name of the DHCPV6C variable was
+incorrectly put in as DHCPV6 all the way back when the netcf package
+was first written, and nobody noticed, until this bug was filed:
+
+Resolves:  https://bugzilla.redhat.com/show_bug.cgi?id=1113978
+
+(cherry-picked from upstream commit
+3806b2103f7e07eaa56bd60841c82b0dc4dc3f3e)
+---
+ data/xml/redhat-get.xsl                    |    4 ++--
+ data/xml/redhat-put.xsl                    |    2 +-
+ data/xml/suse-get.xsl                      |    4 ++--
+ data/xml/suse-put.xsl                      |    2 +-
+ tests/redhat/schema/ipv6-autoconf-dhcp.xml |    2 +-
+ tests/redhat/schema/ipv6-autoconf.xml      |    2 +-
+ tests/redhat/schema/ipv6-dhcp.xml          |    2 +-
+ tests/redhat/schema/ipv6-local.xml         |    2 +-
+ tests/redhat/schema/ipv6-static-multi.xml  |    2 +-
+ tests/redhat/schema/ipv6-static.xml        |    2 +-
+ tests/suse/schema/ipv6-autoconf-dhcp.xml   |    2 +-
+ tests/suse/schema/ipv6-autoconf.xml        |    2 +-
+ tests/suse/schema/ipv6-dhcp.xml            |    2 +-
+ tests/suse/schema/ipv6-local.xml           |    2 +-
+ tests/suse/schema/ipv6-static-multi.xml    |    2 +-
+ tests/suse/schema/ipv6-static.xml          |    2 +-
+ 16 files changed, 18 insertions(+), 18 deletions(-)
+
+diff --git a/data/xml/redhat-get.xsl b/data/xml/redhat-get.xsl
+index fab8ecb..923dde0 100644
+--- a/data/xml/redhat-get.xsl
++++ b/data/xml/redhat-get.xsl
+@@ -211,10 +211,10 @@
+       <node label="IPV6_AUTOCONF" value="no"/>
+     </xsl:if>
+     <xsl:if test="count(dhcp) > 0">
+-      <node label="DHCPV6" value="yes"/>
++      <node label="DHCPV6C" value="yes"/>
+     </xsl:if>
+     <xsl:if test="count(dhcp) = 0">
+-      <node label="DHCPV6" value="no"/>
++      <node label="DHCPV6C" value="no"/>
+     </xsl:if>
+     <xsl:if test="count(ip) > 0">
+       <node label="IPV6ADDR">
+diff --git a/data/xml/redhat-put.xsl b/data/xml/redhat-put.xsl
+index 88e6d73..579da12 100644
+--- a/data/xml/redhat-put.xsl
++++ b/data/xml/redhat-put.xsl
+@@ -221,7 +221,7 @@
+         <xsl:if test="node[@label = 'IPV6_AUTOCONF'][@value = 'yes']">
+           <autoconf/>
+         </xsl:if>
+-        <xsl:if test="node[@label = 'DHCPV6'][@value = 'yes']">
++        <xsl:if test="node[@label = 'DHCPV6C'][@value = 'yes']">
+           <dhcp/>
+         </xsl:if>
+         <xsl:if test="node[@label = 'IPV6ADDR']">
+diff --git a/data/xml/suse-get.xsl b/data/xml/suse-get.xsl
+index dd5dff6..182d292 100644
+--- a/data/xml/suse-get.xsl
++++ b/data/xml/suse-get.xsl
+@@ -228,10 +228,10 @@
+       <node label="IPV6_AUTOCONF" value="no"/>
+     </xsl:if>
+     <xsl:if test="count(dhcp) > 0">
+-      <node label="DHCPV6" value="yes"/>
++      <node label="DHCPV6C" value="yes"/>
+     </xsl:if>
+     <xsl:if test="count(dhcp) = 0">
+-      <node label="DHCPV6" value="no"/>
++      <node label="DHCPV6C" value="no"/>
+     </xsl:if>
+     <xsl:if test="count(ip) > 0">
+       <node label="IPV6ADDR">
+diff --git a/data/xml/suse-put.xsl b/data/xml/suse-put.xsl
+index 1b5145a..f3903a2 100644
+--- a/data/xml/suse-put.xsl
++++ b/data/xml/suse-put.xsl
+@@ -214,7 +214,7 @@
+         <xsl:if test="node[@label = 'IPV6_AUTOCONF'][@value = 'yes']">
+           <autoconf/>
+         </xsl:if>
+-        <xsl:if test="node[@label = 'DHCPV6'][@value = 'yes']">
++        <xsl:if test="node[@label = 'DHCPV6C'][@value = 'yes']">
+           <dhcp/>
+         </xsl:if>
+         <xsl:if test="node[@label = 'IPV6ADDR']">
+diff --git a/tests/redhat/schema/ipv6-autoconf-dhcp.xml b/tests/redhat/schema/ipv6-autoconf-dhcp.xml
+index f755fa4..c15fea7 100644
+--- a/tests/redhat/schema/ipv6-autoconf-dhcp.xml
++++ b/tests/redhat/schema/ipv6-autoconf-dhcp.xml
+@@ -5,6 +5,6 @@
+     <node label="ONBOOT" value="yes"/>
+     <node label="IPV6INIT" value="yes"/>
+     <node label="IPV6_AUTOCONF" value="yes"/>
+-    <node label="DHCPV6" value="yes"/>
++    <node label="DHCPV6C" value="yes"/>
+   </tree>
+ </forest>
+diff --git a/tests/redhat/schema/ipv6-autoconf.xml b/tests/redhat/schema/ipv6-autoconf.xml
+index 637864c..b6d9049 100644
+--- a/tests/redhat/schema/ipv6-autoconf.xml
++++ b/tests/redhat/schema/ipv6-autoconf.xml
+@@ -5,6 +5,6 @@
+     <node label="ONBOOT" value="yes"/>
+     <node label="IPV6INIT" value="yes"/>
+     <node label="IPV6_AUTOCONF" value="yes"/>
+-    <node label="DHCPV6" value="no"/>
++    <node label="DHCPV6C" value="no"/>
+   </tree>
+ </forest>
+diff --git a/tests/redhat/schema/ipv6-dhcp.xml b/tests/redhat/schema/ipv6-dhcp.xml
+index c87f0ce..e3a36b0 100644
+--- a/tests/redhat/schema/ipv6-dhcp.xml
++++ b/tests/redhat/schema/ipv6-dhcp.xml
+@@ -5,6 +5,6 @@
+     <node label="ONBOOT" value="yes"/>
+     <node label="IPV6INIT" value="yes"/>
+     <node label="IPV6_AUTOCONF" value="no"/>
+-    <node label="DHCPV6" value="yes"/>
++    <node label="DHCPV6C" value="yes"/>
+   </tree>
+ </forest>
+diff --git a/tests/redhat/schema/ipv6-local.xml b/tests/redhat/schema/ipv6-local.xml
+index 96294f8..a6d4a3d 100644
+--- a/tests/redhat/schema/ipv6-local.xml
++++ b/tests/redhat/schema/ipv6-local.xml
+@@ -5,6 +5,6 @@
+     <node label="ONBOOT" value="yes"/>
+     <node label="IPV6INIT" value="yes"/>
+     <node label="IPV6_AUTOCONF" value="no"/>
+-    <node label="DHCPV6" value="no"/>
++    <node label="DHCPV6C" value="no"/>
+   </tree>
+ </forest>
+diff --git a/tests/redhat/schema/ipv6-static-multi.xml b/tests/redhat/schema/ipv6-static-multi.xml
+index e8eec8f..d865a05 100644
+--- a/tests/redhat/schema/ipv6-static-multi.xml
++++ b/tests/redhat/schema/ipv6-static-multi.xml
+@@ -5,7 +5,7 @@
+     <node label="ONBOOT" value="yes"/>
+     <node label="IPV6INIT" value="yes"/>
+     <node label="IPV6_AUTOCONF" value="no"/>
+-    <node label="DHCPV6" value="no"/>
++    <node label="DHCPV6C" value="no"/>
+     <node label="IPV6ADDR" value="3ffe:ffff:0:5::1/128"/>
+     <node label="IPV6ADDR_SECONDARIES" value="'3ffe:ffff:0:5::3/128 3ffe:ffff:0:5::5/128'"/>
+   </tree>
+diff --git a/tests/redhat/schema/ipv6-static.xml b/tests/redhat/schema/ipv6-static.xml
+index 187b1dc..26d71e0 100644
+--- a/tests/redhat/schema/ipv6-static.xml
++++ b/tests/redhat/schema/ipv6-static.xml
+@@ -5,7 +5,7 @@
+     <node label="ONBOOT" value="yes"/>
+     <node label="IPV6INIT" value="yes"/>
+     <node label="IPV6_AUTOCONF" value="no"/>
+-    <node label="DHCPV6" value="no"/>
++    <node label="DHCPV6C" value="no"/>
+     <node label="IPV6ADDR" value="3ffe:ffff:0:5::1/128"/>
+     <node label="IPV6_DEFAULTGW" value="3ffe:ffff:1234:5678::1"/>
+   </tree>
+diff --git a/tests/suse/schema/ipv6-autoconf-dhcp.xml b/tests/suse/schema/ipv6-autoconf-dhcp.xml
+index f755fa4..c15fea7 100644
+--- a/tests/suse/schema/ipv6-autoconf-dhcp.xml
++++ b/tests/suse/schema/ipv6-autoconf-dhcp.xml
+@@ -5,6 +5,6 @@
+     <node label="ONBOOT" value="yes"/>
+     <node label="IPV6INIT" value="yes"/>
+     <node label="IPV6_AUTOCONF" value="yes"/>
+-    <node label="DHCPV6" value="yes"/>
++    <node label="DHCPV6C" value="yes"/>
+   </tree>
+ </forest>
+diff --git a/tests/suse/schema/ipv6-autoconf.xml b/tests/suse/schema/ipv6-autoconf.xml
+index 637864c..b6d9049 100644
+--- a/tests/suse/schema/ipv6-autoconf.xml
++++ b/tests/suse/schema/ipv6-autoconf.xml
+@@ -5,6 +5,6 @@
+     <node label="ONBOOT" value="yes"/>
+     <node label="IPV6INIT" value="yes"/>
+     <node label="IPV6_AUTOCONF" value="yes"/>
+-    <node label="DHCPV6" value="no"/>
++    <node label="DHCPV6C" value="no"/>
+   </tree>
+ </forest>
+diff --git a/tests/suse/schema/ipv6-dhcp.xml b/tests/suse/schema/ipv6-dhcp.xml
+index c87f0ce..e3a36b0 100644
+--- a/tests/suse/schema/ipv6-dhcp.xml
++++ b/tests/suse/schema/ipv6-dhcp.xml
+@@ -5,6 +5,6 @@
+     <node label="ONBOOT" value="yes"/>
+     <node label="IPV6INIT" value="yes"/>
+     <node label="IPV6_AUTOCONF" value="no"/>
+-    <node label="DHCPV6" value="yes"/>
++    <node label="DHCPV6C" value="yes"/>
+   </tree>
+ </forest>
+diff --git a/tests/suse/schema/ipv6-local.xml b/tests/suse/schema/ipv6-local.xml
+index 96294f8..a6d4a3d 100644
+--- a/tests/suse/schema/ipv6-local.xml
++++ b/tests/suse/schema/ipv6-local.xml
+@@ -5,6 +5,6 @@
+     <node label="ONBOOT" value="yes"/>
+     <node label="IPV6INIT" value="yes"/>
+     <node label="IPV6_AUTOCONF" value="no"/>
+-    <node label="DHCPV6" value="no"/>
++    <node label="DHCPV6C" value="no"/>
+   </tree>
+ </forest>
+diff --git a/tests/suse/schema/ipv6-static-multi.xml b/tests/suse/schema/ipv6-static-multi.xml
+index e8eec8f..d865a05 100644
+--- a/tests/suse/schema/ipv6-static-multi.xml
++++ b/tests/suse/schema/ipv6-static-multi.xml
+@@ -5,7 +5,7 @@
+     <node label="ONBOOT" value="yes"/>
+     <node label="IPV6INIT" value="yes"/>
+     <node label="IPV6_AUTOCONF" value="no"/>
+-    <node label="DHCPV6" value="no"/>
++    <node label="DHCPV6C" value="no"/>
+     <node label="IPV6ADDR" value="3ffe:ffff:0:5::1/128"/>
+     <node label="IPV6ADDR_SECONDARIES" value="'3ffe:ffff:0:5::3/128 3ffe:ffff:0:5::5/128'"/>
+   </tree>
+diff --git a/tests/suse/schema/ipv6-static.xml b/tests/suse/schema/ipv6-static.xml
+index 187b1dc..26d71e0 100644
+--- a/tests/suse/schema/ipv6-static.xml
++++ b/tests/suse/schema/ipv6-static.xml
+@@ -5,7 +5,7 @@
+     <node label="ONBOOT" value="yes"/>
+     <node label="IPV6INIT" value="yes"/>
+     <node label="IPV6_AUTOCONF" value="no"/>
+-    <node label="DHCPV6" value="no"/>
++    <node label="DHCPV6C" value="no"/>
+     <node label="IPV6ADDR" value="3ffe:ffff:0:5::1/128"/>
+     <node label="IPV6_DEFAULTGW" value="3ffe:ffff:1234:5678::1"/>
+   </tree>
+-- 
+1.7.1
+

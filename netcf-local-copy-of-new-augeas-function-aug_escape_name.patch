@@ -1,0 +1,181 @@
+From 328fcb351092b5027d7353c9338336f52bfc7e7e Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Wed, 4 Mar 2015 17:36:00 -0500
+Subject: [PATCH 06/13] local copy of new augeas function aug_escape_name()
+
+Part of resolution for:
+
+  https://bugzilla.redhat.com/show_bug.cgi?id=1165966
+  (CVE-2014-8119)
+
+In order to get the functionality of aug_escape_name() on systems that
+use an older version of augeas that doesn't yet have this API, this
+patch replicates the same functionality in a local function
+aug_escape_name_base() (which will be called by aug_escape_name_wrap()
+in most places, or directly when augeas isn't available, e.g. during
+xslt transforms).
+
+Once a release of augeas with the new API is generally available, a
+followup patch will selectively replace the innards of
+aug_escape_name_wrap() with a call to the real aug_escape_name(), if
+configure detects it.
+
+Note that this patch by itself does not solve CVE-2014-8119. A full
+solution requires augeas itself to be patched to change the behavior
+of aug_match() so that it escapes all the components of returned
+paths.
+(cherry picked from commit eae312f5aacae061d468c58196a56f922b15e947)
+---
+ src/dutil.c       |   45 ++++++++++++++++++++++++++++++++++++++++++++-
+ src/dutil.h       |    8 +++++++-
+ src/dutil_linux.c |   17 +++++++++++++++++
+ src/dutil_linux.h |    9 ++++++++-
+ 4 files changed, 76 insertions(+), 3 deletions(-)
+
+diff --git a/src/dutil.c b/src/dutil.c
+index 418ba37..6c56cd4 100644
+--- a/src/dutil.c
++++ b/src/dutil.c
+@@ -1,7 +1,7 @@
+ /*
+  * dutil.c: Global utility functions for driver backends.
+  *
+- * Copyright (C) 2009 Red Hat Inc.
++ * Copyright (C) 2009-2011, 2015 Red Hat Inc.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -127,6 +127,49 @@ argv_to_string(const char *const *argv) {
+     return ret;
+ }
+ 
++
++/* The characters that can follow a name in an augeas location
++ * expression (aka path) The parser will assume that name (path
++ * component) is finished when it encounters any of these characters,
++ * unless they are escaped by preceding them with a '\\'.
++ *
++ * See parse_name in the augeas source for the gory details
++ */
++static const char const name_escape[] = "][|/=()!," "\\ ";
++
++/* a local equivalent to augeas' aug_escape_name() API, for those
++ * times when it isn't available.
++ */
++int
++aug_escape_name_base(const char *in, char **out)
++{
++    const char *p;
++    int num_to_escape = 0;
++    char *s;
++
++    *out = NULL;
++
++    for (p = in; *p; p++) {
++        if (strchr(name_escape, *p) || isspace(*p))
++            num_to_escape += 1;
++    }
++
++    if (num_to_escape == 0)
++        return 0;
++
++    if (ALLOC_N(*out, strlen(in) + num_to_escape + 1) < 0)
++        return -1;
++
++    for (p = in, s = *out; *p; p++) {
++        if (strchr(name_escape, *p) || isspace(*p))
++            *s++ = '\\';
++        *s++ = *p;
++    }
++    *s = '\0';
++    return 0;
++}
++
++
+ void report_error(struct netcf *ncf, netcf_errcode_t errcode,
+                   const char *format, ...) {
+     va_list ap;
+diff --git a/src/dutil.h b/src/dutil.h
+index e9523bf..a42d83d 100644
+--- a/src/dutil.h
++++ b/src/dutil.h
+@@ -1,7 +1,7 @@
+ /*
+  * dutil.h: Global utility functions for driver backends.
+  *
+- * Copyright (C) 2009 Red Hat Inc.
++ * Copyright (C) 2009-2011, 2015 Red Hat Inc.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -41,6 +41,12 @@ int xasprintf(char **strp, const char *format, ...);
+  */
+ char *argv_to_string(const char *const *argv);
+ 
++/* a simpler aug_escape_name() function (see augeas API) that
++ * doesn't/can't require aug or ncf objects, for calling when those
++ * objects (or possibly even their types) aren't available.
++ */
++int aug_escape_name_base(const char *in, char **out);
++
+ /*
+  * Error reporting
+  */
+diff --git a/src/dutil_linux.c b/src/dutil_linux.c
+index 3cb6f39..fa36e7c 100644
+--- a/src/dutil_linux.c
++++ b/src/dutil_linux.c
+@@ -282,6 +282,23 @@ int defnode(struct netcf *ncf, const char *name, const char *value,
+     return (r < 0) ? -1 : created;
+ }
+ 
++
++/* a wrapper around / functional equivalent of the new augeas api
++ * "aug_escape_name()". It is copied here so that netcf can take
++ * advantage of it even when the installed augeas version is too old.
++ */
++int
++aug_escape_name_wrap(struct netcf *ncf ATTRIBUTE_UNUSED,
++                     const augeas *aug ATTRIBUTE_UNUSED,
++                     const char *in, char **out)
++{
++    /* in the future we will use aug to call the augeas API,
++     * and may use ncf to set error codes
++     */
++    return aug_escape_name_base(in, out);
++}
++
++
+ int aug_fmt_set(struct netcf *ncf, const char *value, const char *fmt, ...)
+ {
+     augeas *aug = NULL;
+diff --git a/src/dutil_linux.h b/src/dutil_linux.h
+index 5cfb5cd..a06a15c 100644
+--- a/src/dutil_linux.h
++++ b/src/dutil_linux.h
+@@ -1,7 +1,7 @@
+ /*
+  * dutil_linux.h: Linux utility functions for driver backends.
+  *
+- * Copyright (C) 2009 Red Hat Inc.
++ * Copyright (C) 2009-2011, 2014-2015 Red Hat Inc.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -77,6 +77,13 @@ ATTRIBUTE_FORMAT(printf, 4, 5)
+ int defnode(struct netcf *ncf, const char *name, const char *value,
+                    const char *format, ...);
+ 
++/* wrappers around the augeas aug_escape_name() API. This is done so
++ * that we can escape path components without requiring the
++ * aug_escape_name() API in the version of augeas used for building.
++ */
++int aug_escape_name_wrap(struct netcf *ncf, const augeas *aug,
++                         const char *in, char **out);
++
+ /* Format a path by doing a printf of FMT and the var args, then call
+    AUG_MATCH on that path. Sets NCF->ERRCODE on error */
+ ATTRIBUTE_FORMAT(printf, 3, 4)
+-- 
+1.7.1
+
