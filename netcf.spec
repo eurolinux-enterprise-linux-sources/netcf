@@ -1,6 +1,6 @@
 Name:           netcf
 Version:        0.2.4
-Release:        3%{?dist}%{?extra_release}
+Release:        4%{?dist}%{?extra_release}
 Summary:        Cross-platform network configuration library
 
 Group:          System Environment/Libraries
@@ -40,6 +40,8 @@ Patch012: netcf-when-calling-aug_rm-escape-special-characters-in-com.patch
 Patch013: netcf-escape-interface-name-in-path-generated-by-xsl-trans.patch
 Patch014: netcf-eliminate-netcf-specific-sysconfig.aug-lens.patch
 Patch015: netcf-Remove-extraneous-single-quotes-from-IPV6ADDR_SECOND.patch
+Patch016: netcf-call-aug_load-at-most-once-per-second.patch
+Patch017: netcf-optimize-aug_match-query-for-all-ifcfg-files-related.patch
 
 # git is used to build a source tree with patches applied (see the
 # prep section)
@@ -236,6 +238,10 @@ fi
 %{_libdir}/pkgconfig/netcf.pc
 
 %changelog
+* Fri Jan 22 2016 Laine Stump <laine@redhat.com> - 0.2.4-4
+ - resolves rhbz#1235959
+ - improve libvirt performance with large number of host interfaces
+
 * Tue Apr 14 2015 Laine Stump <laine@redhat.com> - 0.2.4-3
  - resolves rhbz#1208894
  - Remove extraneous single quotes from IPV6ADDR_SECONDARIES
