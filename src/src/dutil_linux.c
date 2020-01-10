@@ -1,7 +1,7 @@
 /*
  * dutil_linux.c: Linux utility functions for driver backends.
  *
- * Copyright (C) 2009-2012 Red Hat Inc.
+ * Copyright (C) 2009-2012, 2014 Red Hat Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -221,7 +221,7 @@ int defnode(struct netcf *ncf, const char *name, const char *value,
     struct augeas *aug = get_augeas(ncf);
     va_list ap;
     char *expr = NULL;
-    int r, created;
+    int r = -1, created;
 
     ERR_BAIL(ncf);
 
@@ -370,10 +370,11 @@ int aug_match_mac(struct netcf *ncf, const char *mac, char ***matches) {
 
 /* Get the MAC address of the interface INTF */
 int aug_get_mac(struct netcf *ncf, const char *intf, const char **mac) {
-    int r;
-    char *path;
+    int r = -1;
+    char *path = NULL;
     struct augeas *aug = get_augeas(ncf);
 
+    *mac = NULL;
     ERR_BAIL(ncf);
 
     r = xasprintf(&path, "/files/sys/class/net/%s/address/content", intf);
@@ -455,6 +456,15 @@ void modprobed_unalias_bond(struct netcf *ncf, const char *name) {
 
 int if_is_active(struct netcf *ncf, const char *intf) {
     struct ifreq ifr;
+    short flags_to_check = IFF_UP;
+
+    /*
+     * IFF_RUNNING is set on a bridge only if there is at least one
+     * network device attached.
+     */
+    if(if_type(ncf, intf) != NETCF_IFACE_TYPE_BRIDGE) {
+        flags_to_check |= IFF_RUNNING;
+    }
 
     MEMZERO(&ifr, 1);
     strncpy(ifr.ifr_name, intf, sizeof(ifr.ifr_name));
@@ -462,7 +472,7 @@ int if_is_active(struct netcf *ncf, const char *intf) {
     if (ioctl(ncf->driver->ioctl_fd, SIOCGIFFLAGS, &ifr))  {
         return 0;
     }
-    return ((ifr.ifr_flags & (IFF_UP|IFF_RUNNING)) == (IFF_UP|IFF_RUNNING));
+    return ((ifr.ifr_flags & flags_to_check) == flags_to_check);
 }
 
 netcf_if_type_t if_type(struct netcf *ncf, const char *intf) {
@@ -1012,6 +1022,70 @@ static void add_bond_info(struct netcf *ncf,
 }
 
 
+static void add_link_info(struct netcf *ncf,
+                          const char *ifname, int ifindex ATTRIBUTE_UNUSED,
+                          xmlDocPtr doc, xmlNodePtr root) {
+    char errbuf[128];
+    xmlNodePtr link_node = NULL;
+    xmlAttrPtr prop = NULL;
+    char *path = NULL;
+    size_t length;
+    char *state = NULL;
+    char *speed = NULL;
+    char *nl;
+
+    link_node = xml_node(doc, root, "link");
+    ERR_NOMEM(link_node == NULL, ncf);
+
+    xasprintf(&path, "/sys/class/net/%s/operstate", ifname);
+    ERR_NOMEM(!path, ncf);
+    state = read_file(path, &length);
+    FREE(path);
+    ERR_THROW_STRERROR(!state, ncf, EFILE, "Failed to read %s", path);
+    if ((nl = strchr(state, '\n')))
+        *nl = 0;
+    prop = xmlSetProp(link_node, BAD_CAST "state", BAD_CAST state);
+    ERR_NOMEM(!prop, ncf);
+
+    if (!strcmp(state, "up")) {
+        xasprintf(&path, "/sys/class/net/%s/speed", ifname);
+        ERR_NOMEM(path == NULL, ncf);
+        speed = read_file(path, &length);
+        if (!speed && errno == EINVAL) {
+            /* attempts to read $ifname/speed result in EINVAL if the
+             * interface is ifconfiged down (which isn't exactly the
+             * same as an operstate of "down").
+             */
+            speed = strdup("0");
+            ERR_NOMEM(!speed, ncf);
+        }
+        ERR_THROW_STRERROR(!speed, ncf, EFILE, "Failed to read %s", path);
+        if ((nl = strchr(speed, '\n')))
+            *nl = 0;
+    } else {
+        /* When the link state is "down" (and most/all other states
+         * except "up"), different drivers report a different value
+         * for speed. In one local sample, the following were seen:
+         * "10", "65535", "4294967295". Since the effective speed is
+         * "0", just change it to that whenever the link state is not
+         * "up".
+         */
+        FREE(speed);
+        speed = strdup("0");
+        ERR_NOMEM(!speed, ncf);
+    }
+
+    prop = xmlSetProp(link_node, BAD_CAST "speed", BAD_CAST speed);
+    ERR_NOMEM(prop == NULL, ncf);
+
+ error:
+    FREE(path);
+    FREE(state);
+    FREE(speed);
+    return;
+}
+
+
 static void add_type_specific_info(struct netcf *ncf,
                                    const char *ifname, int ifindex,
                                    xmlDocPtr doc, xmlNodePtr root) {
@@ -1029,6 +1103,11 @@ static void add_type_specific_info(struct netcf *ncf,
     if (iftype_str) {
         prop = xmlSetProp(root, BAD_CAST "type", BAD_CAST if_type_str(iftype));
         ERR_NOMEM(prop == NULL, ncf);
+    }
+
+    if (iftype != NETCF_IFACE_TYPE_BRIDGE) {
+        add_link_info(ncf, ifname, ifindex, doc, root);
+        ERR_BAIL(ncf);
     }
 
     switch (iftype) {

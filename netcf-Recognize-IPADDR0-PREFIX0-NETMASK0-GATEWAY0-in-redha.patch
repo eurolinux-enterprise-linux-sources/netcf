@@ -1,0 +1,237 @@
+From 0015f8e8615458deac78cc3172b74c2983dbaaab Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Thu, 30 Oct 2014 11:45:23 -0400
+Subject: [PATCH 2/2] Recognize IPADDR0/PREFIX0/NETMASK0/GATEWAY0 in redhat and
+ suse backends
+
+(another case of explanation taking longer than the patch...)
+
+This resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1147650
+
+The redhat and suse backends for netcf convert from a raw xml-ized
+representation of ifcfg file contents (produced by augeas) to the
+<interface> xml element known by libvirt using two xsl stylesheets:
+
+  data/xml/redhat-put.xsl
+  data/xml/suse-put.xsl
+
+(I am personally interested in redhat-put.xsl, but am making the patch
+described below to suse-put.xsl as well since the files are nearly
+identical).
+
+Examples of the "raw" xml can be seen in
+tests/redhat/schema/*.xml. Basically each ifcfg setting is in an
+element called "node", e.g:
+
+  <node label="DEVICE" value="eth1"/>
+  <node label="IPADDR" value="192.168.0.5"/>
+
+The issue is that while the netcf stylesheets were written to use
+IPADDR/PREFIX/NETMASK/GATEWAY, in certain versions of NetworkManager
+(e.g. the version that is in RHEL7, but *not* the version that is in
+Fedora 20) NetworkManager uses IPADDR0, PREFIX0, and GATEWAY0 to store
+the interface IPv4 info, rather than IPADDR, PREFIX, and GATEWAY (In
+those cases, it will still recognize IPADDR/PREFIX/GATEWAY, but when
+it saves anything, it uses IPADDR0/PREFIX0/GATEWAY0).  Initscripts, on
+the other hand, recognizes IPADDR0 and PREFIX0, but doesn't understand
+GATEWAY0, it only sees GATEWAY.
+
+The problem with the above comes when we do a dumpxml of an interface
+created by NM (or anaconda, the Fedora installer, which also uses
+IPADDR0), or worse yet when libvirt's virsh utility puts a bridge on
+an ethernet by getting the current XML, modifying it, then writing
+back the new config - since netcf doesn't see IPADDR0, the <ip>
+element is empty in the original retrieved xml, and thus when the new
+bridge interface is defined, it has no IP address info.
+
+The solution to this is to improve the *-put.xsl to recognize either
+the old form *or* the ${var}0 form when converting into <interface>
+XML. For maximum compatibility, the conversion back into ifcfg format
+is left the same, as all versions of initscripts and NetworkManager
+that I've tried continue to recognize them.
+
+Beyond what is done here, both NM and initscripts recognize IPADDRn
+where "n" can be any number up to 255, and since we support multiple
+IPv6 addresses in netcf, I would like to support multiple IPv4
+addresses as well. That is left for a future patch, as my XSL skills
+simply are not up to that task (patches welcome!)
+
+(cherry picked from commit c0e7734cb3c616c102cfff4ce1aeee023e85659a)
+---
+ data/xml/redhat-put.xsl | 61 +++++++++++++++++++++++++++++++++++++------------
+ data/xml/suse-put.xsl   | 61 +++++++++++++++++++++++++++++++++++++------------
+ 2 files changed, 94 insertions(+), 28 deletions(-)
+
+diff --git a/data/xml/redhat-put.xsl b/data/xml/redhat-put.xsl
+index 579da12..ed800d6 100644
+--- a/data/xml/redhat-put.xsl
++++ b/data/xml/redhat-put.xsl
+@@ -183,7 +183,8 @@
+     <xsl:variable name="uses_dhcp"
+                   select="node[@label = 'BOOTPROTO']/@value = 'dhcp'"/>
+     <xsl:variable name="uses_static"
+-                  select="count(node[@label = 'IPADDR']) > 0"/>
++                  select="count(node[@label = 'IPADDR']) +
++                          count(node[@label = 'IPADDR0']) > 0"/>
+     <xsl:variable name="uses_ipv4" select="$uses_dhcp or $uses_static"/>
+     <xsl:if test="$uses_ipv4">
+     <protocol family="ipv4">
+@@ -196,25 +197,57 @@
+           </dhcp>
+         </xsl:when>
+         <xsl:when test="$uses_static">
+-          <ip address="{node[@label = 'IPADDR']/@value}">
+-            <xsl:choose>
+-              <xsl:when test="node[@label = 'PREFIX']">
+-                <xsl:attribute name="prefix"><xsl:value-of select="node[@label = 'PREFIX']/@value"/></xsl:attribute>
+-              </xsl:when>
+-              <xsl:when test="node[@label = 'NETMASK']">
+-                <xsl:attribute name="prefix"><xsl:value-of select="ipcalc:prefix(node[@label = 'NETMASK']/@value)"/></xsl:attribute>
+-              </xsl:when>
+-            </xsl:choose>
+-          </ip>
+-          <xsl:if test="node[@label = 'GATEWAY']">
+-            <route gateway="{node[@label = 'GATEWAY']/@value}"/>
+-          </xsl:if>
++          <xsl:choose>
++            <xsl:when test="node[@label = 'IPADDR']">
++              <ip address="{node[@label = 'IPADDR']/@value}">
++                <xsl:call-template name="ipv4-attributes"/>
++              </ip>
++            </xsl:when>
++            <xsl:when test="node[@label = 'IPADDR0']">
++              <ip address="{node[@label = 'IPADDR0']/@value}">
++                <xsl:call-template name="ipv4-attributes"/>
++              </ip>
++            </xsl:when>
++          </xsl:choose>
++          <xsl:choose>
++            <xsl:when test="node[@label = 'GATEWAY']">
++              <route gateway="{node[@label = 'GATEWAY']/@value}"/>
++            </xsl:when>
++            <xsl:when test="node[@label = 'GATEWAY0']">
++              <route gateway="{node[@label = 'GATEWAY0']/@value}"/>
++            </xsl:when>
++          </xsl:choose>
+         </xsl:when>
+       </xsl:choose>
+     </protocol>
+     </xsl:if>
+   </xsl:template>
+ 
++  <xsl:template name="ipv4-attributes">
++    <xsl:choose>
++      <xsl:when test="node[@label = 'PREFIX']">
++        <xsl:attribute name="prefix">
++          <xsl:value-of select="node[@label = 'PREFIX']/@value"/>
++        </xsl:attribute>
++      </xsl:when>
++      <xsl:when test="node[@label = 'PREFIX0']">
++        <xsl:attribute name="prefix">
++          <xsl:value-of select="node[@label = 'PREFIX0']/@value"/>
++        </xsl:attribute>
++      </xsl:when>
++      <xsl:when test="node[@label = 'NETMASK']">
++        <xsl:attribute name="prefix">
++          <xsl:value-of select="ipcalc:prefix(node[@label = 'NETMASK']/@value)"/>
++        </xsl:attribute>
++      </xsl:when>
++      <xsl:when test="node[@label = 'NETMASK0']">
++        <xsl:attribute name="prefix">
++          <xsl:value-of select="ipcalc:prefix(node[@label = 'NETMASK0']/@value)"/>
++        </xsl:attribute>
++      </xsl:when>
++    </xsl:choose>
++  </xsl:template>
++
+   <xsl:template name="protocol-ipv6">
+     <xsl:if test="node[@label = 'IPV6INIT'][@value = 'yes']">
+       <protocol family="ipv6">
+diff --git a/data/xml/suse-put.xsl b/data/xml/suse-put.xsl
+index f3903a2..7dd739a 100644
+--- a/data/xml/suse-put.xsl
++++ b/data/xml/suse-put.xsl
+@@ -176,7 +176,8 @@
+     <xsl:variable name="uses_dhcp"
+                   select="node[@label = 'BOOTPROTO']/@value = 'dhcp'"/>
+     <xsl:variable name="uses_static"
+-                  select="count(node[@label = 'IPADDR']) > 0"/>
++                  select="count(node[@label = 'IPADDR']) +
++                          count(node[@label = 'IPADDR0']) > 0"/>
+     <xsl:variable name="uses_ipv4" select="$uses_dhcp or $uses_static"/>
+     <xsl:if test="$uses_ipv4">
+     <protocol family="ipv4">
+@@ -189,25 +190,57 @@
+           </dhcp>
+         </xsl:when>
+         <xsl:when test="$uses_static">
+-          <ip address="{node[@label = 'IPADDR']/@value}">
+-            <xsl:choose>
+-              <xsl:when test="node[@label = 'PREFIX']">
+-                <xsl:attribute name="prefix"><xsl:value-of select="node[@label = 'PREFIX']/@value"/></xsl:attribute>
+-              </xsl:when>
+-              <xsl:when test="node[@label = 'NETMASK']">
+-                <xsl:attribute name="prefix"><xsl:value-of select="ipcalc:prefix(node[@label = 'NETMASK']/@value)"/></xsl:attribute>
+-              </xsl:when>
+-            </xsl:choose>
+-          </ip>
+-          <xsl:if test="node[@label = 'GATEWAY']">
+-            <route gateway="{node[@label = 'GATEWAY']/@value}"/>
+-          </xsl:if>
++          <xsl:choose>
++            <xsl:when test="node[@label = 'IPADDR']">
++              <ip address="{node[@label = 'IPADDR']/@value}">
++                <xsl:call-template name="ipv4-attributes"/>
++              </ip>
++            </xsl:when>
++            <xsl:when test="node[@label = 'IPADDR0']">
++              <ip address="{node[@label = 'IPADDR0']/@value}">
++                <xsl:call-template name="ipv4-attributes"/>
++              </ip>
++            </xsl:when>
++          </xsl:choose>
++          <xsl:choose>
++            <xsl:when test="node[@label = 'GATEWAY']">
++              <route gateway="{node[@label = 'GATEWAY']/@value}"/>
++            </xsl:when>
++            <xsl:when test="node[@label = 'GATEWAY0']">
++              <route gateway="{node[@label = 'GATEWAY0']/@value}"/>
++            </xsl:when>
++          </xsl:choose>
+         </xsl:when>
+       </xsl:choose>
+     </protocol>
+     </xsl:if>
+   </xsl:template>
+ 
++  <xsl:template name="ipv4-attributes">
++    <xsl:choose>
++      <xsl:when test="node[@label = 'PREFIX']">
++        <xsl:attribute name="prefix">
++          <xsl:value-of select="node[@label = 'PREFIX']/@value"/>
++        </xsl:attribute>
++      </xsl:when>
++      <xsl:when test="node[@label = 'PREFIX0']">
++        <xsl:attribute name="prefix">
++          <xsl:value-of select="node[@label = 'PREFIX0']/@value"/>
++        </xsl:attribute>
++      </xsl:when>
++      <xsl:when test="node[@label = 'NETMASK']">
++        <xsl:attribute name="prefix">
++          <xsl:value-of select="ipcalc:prefix(node[@label = 'NETMASK']/@value)"/>
++        </xsl:attribute>
++      </xsl:when>
++      <xsl:when test="node[@label = 'NETMASK0']">
++        <xsl:attribute name="prefix">
++          <xsl:value-of select="ipcalc:prefix(node[@label = 'NETMASK0']/@value)"/>
++        </xsl:attribute>
++      </xsl:when>
++    </xsl:choose>
++  </xsl:template>
++
+   <xsl:template name="protocol-ipv6">
+     <xsl:if test="node[@label = 'IPV6INIT'][@value = 'yes']">
+       <protocol family="ipv6">
+-- 
+1.8.3.1
+

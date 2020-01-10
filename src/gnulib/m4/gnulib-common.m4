@@ -1,5 +1,5 @@
-# gnulib-common.m4 serial 33
-dnl Copyright (C) 2007-2012 Free Software Foundation, Inc.
+# gnulib-common.m4 serial 34
+dnl Copyright (C) 2007-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -294,6 +294,8 @@ Amsterdam
 # for interoperability with automake-1.9.6 from autoconf-2.62.
 # Remove this macro when we can assume autoconf >= 2.62 or
 # autoconf >= 2.60 && automake >= 1.10.
+# AC_AUTOCONF_VERSION was introduced in 2.62, so use that as the witness.
+m4_ifndef([AC_AUTOCONF_VERSION],[
 m4_ifdef([AC_PROG_MKDIR_P], [
   dnl For automake-1.9.6 && autoconf < 2.62: Ensure MKDIR_P is AC_SUBSTed.
   m4_define([AC_PROG_MKDIR_P],
@@ -304,13 +306,15 @@ m4_ifdef([AC_PROG_MKDIR_P], [
     [AC_REQUIRE([AM_PROG_MKDIR_P])dnl defined by automake
      MKDIR_P='$(mkdir_p)'
      AC_SUBST([MKDIR_P])])])
+])
 
 # AC_C_RESTRICT
 # This definition overrides the AC_C_RESTRICT macro from autoconf 2.60..2.61,
 # so that mixed use of GNU C and GNU C++ and mixed use of Sun C and Sun C++
 # works.
 # This definition can be removed once autoconf >= 2.62 can be assumed.
-m4_if(m4_version_compare(m4_defn([m4_PACKAGE_VERSION]),[2.62]),[-1],[
+# AC_AUTOCONF_VERSION was introduced in 2.62, so use that as the witness.
+m4_ifndef([AC_AUTOCONF_VERSION],[
 AC_DEFUN([AC_C_RESTRICT],
 [AC_CACHE_CHECK([for C/C++ restrict keyword], [ac_cv_c_restrict],
   [ac_cv_c_restrict=no
@@ -371,3 +375,7 @@ AC_DEFUN([gl_CACHE_VAL_SILENT],
   AC_CACHE_VAL([$1], [$2])
   as_echo_n="$saved_as_echo_n"
 ])
+
+# AS_VAR_COPY was added in autoconf 2.63b
+m4_define_default([AS_VAR_COPY],
+[AS_LITERAL_IF([$1[]$2], [$1=$$2], [eval $1=\$$2])])

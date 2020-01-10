@@ -1,0 +1,53 @@
+From 64fcd67471ead7a0205f853a32eece6de4d7436b Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Tue, 27 Jan 2015 11:46:10 -0500
+Subject: [PATCH 2/2] Don't return error if /sys/class/net/$dev/operstate isn't
+ found
+
+This can happen for alias "interfaces", e.g: "eth0:1" (which aren't
+really an interface, but are a deprecated method of adding multiple IP
+addresses to a single interface). Since only the base interface
+("eth0") is really a device, only it has an entry in /sys/class/net.
+
+It's not important that such interfaces have truly meaningful
+information in their <link> element (as we don't really have any truly
+meaningful state, and haven't historically provided other status for
+alias interfaces (e.g. IP address). What *is* important is that we
+don't return an error, as this breaks applications that rely on being
+able to get back a successful (if empty) status for any interface
+listed.
+
+This resolves the regression with virt-manager described here:
+
+  https://bugzilla.redhat.com/show_bug.cgi?id=1185850
+
+(cherry picked from commit 4d5d84bdec17dbb267b5e038fa649af9d730bda9)
+---
+ src/dutil_linux.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/src/dutil_linux.c b/src/dutil_linux.c
+index 52a7299..a8788b6 100644
+--- a/src/dutil_linux.c
++++ b/src/dutil_linux.c
+@@ -1040,8 +1040,15 @@ static void add_link_info(struct netcf *ncf,
+     xasprintf(&path, "/sys/class/net/%s/operstate", ifname);
+     ERR_NOMEM(!path, ncf);
+     state = read_file(path, &length);
+-    ERR_THROW_STRERROR(!state, ncf, EFILE, "Failed to read %s : %s",
+-                       path, errbuf);
++    if (!state) {
++        /* missing operstate is *not* an error. It could be due to an
++         * alias interface, which has no entry in /sys/class/net at
++         * all, for example. This is similar to the situation where we
++         * can't find an ifindex in add_ethernet_info().
++         */
++        state = strdup("");
++        ERR_NOMEM(!state, ncf);
++    }
+     if ((nl = strchr(state, '\n')))
+         *nl = 0;
+     prop = xmlSetProp(link_node, BAD_CAST "state", BAD_CAST state);
+-- 
+1.8.3.1
+

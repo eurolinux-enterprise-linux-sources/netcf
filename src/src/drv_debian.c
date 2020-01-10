@@ -1,7 +1,7 @@
 /*
- * drv_initscripts.c: the initscripts backend for netcf
+ * drv_debian.c: the debian backend for netcf
  *
- * Copyright (C) 2009-2012 Red Hat Inc.
+ * Copyright (C) 2009-2014 Red Hat Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -49,6 +49,7 @@
 
 #include <libexslt/exslt.h>
 
+#undef NETCF_TRANSACTION
 #define NETCF_TRANSACTION "/bin/false"
 
 static const char *const network_interfaces_path =
@@ -145,6 +146,7 @@ static int interface_deps(struct netcf *ncf, char ***slaves, const char *fmt, ..
     }
 
     nmatches = aug_match(aug, path, &matches);
+    FREE(path);
     ERR_COND_BAIL(nmatches < 0, ncf, EOTHER);
 
     if (!nmatches)
@@ -923,6 +925,9 @@ struct netcf_if *drv_define(struct netcf *ncf, const char *xml_str) {
 
     name = device_name_from_xml(ncf, ncf_xml);
     ERR_COND_BAIL(name == NULL, ncf, EINTERNAL);
+    ERR_THROW(strlen(name) >= IFNAMSIZ, ncf, EINTERNAL,
+              "The interface name '%s' exceeds the maximum allowed length: %d",
+              name, IFNAMSIZ - 1);
 
     rm_all_interfaces(ncf, ncf_xml);
     ERR_BAIL(ncf);
@@ -1056,10 +1061,17 @@ int drv_if_up(struct netcf_if *nif) {
     static const char *const ifup = IFUP;
     struct netcf *ncf = nif->ncf;
     int result = -1;
+    int is_active, retries;
 
     run1(ncf, ifup, nif->name);
     ERR_BAIL(ncf);
-    ERR_THROW(!if_is_active(ncf, nif->name), ncf, EOTHER,
+
+    for (retries = 0; retries < 10; retries++) {
+        if ((is_active = if_is_active(ncf, nif->name)))
+            break;
+        usleep(250000);
+    }
+    ERR_THROW(!is_active, ncf, EOTHER,
               "interface %s failed to become active - "
               "possible disconnected cable.", nif->name);
     result = 0;

@@ -1,5 +1,5 @@
 Name:           netcf
-Version:        0.2.3
+Version:        0.2.6
 Release:        1%{?dist}%{?extra_release}
 Summary:        Cross-platform network configuration library
 
@@ -8,6 +8,34 @@ License:        LGPLv2+
 URL:            https://fedorahosted.org/netcf/
 Source0:        https://fedorahosted.org/released/%{name}/%{name}-%{version}.tar.gz
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
+
+# Default to skipping autoreconf.  Distros can change just this one
+# line (or provide a command-line override) if they backport any
+# patches that touch configure.ac or Makefile.am.
+%{!?enable_autotools:%define enable_autotools 0}
+
+# Fedora 20 / RHEL-7 are where netcf first uses systemd. Although earlier
+# Fedora has systemd, netcf still used sysvinit there.
+%if 0%{?fedora} >= 20 || 0%{?rhel} >= 7
+    %define with_systemd 1
+%else
+    %define with_systemd 0
+%endif
+
+%if %{with_systemd}
+BuildRequires: systemd-units
+Requires(post): systemd-units
+Requires(post): systemd-sysv
+Requires(preun): systemd-units
+Requires(postun): systemd-units
+%endif
+%if 0%{?enable_autotools}
+BuildRequires: autoconf
+BuildRequires: automake
+BuildRequires: gettext-devel
+BuildRequires: libtool
+BuildRequires: /usr/bin/pod2man
+%endif
 
 BuildRequires:  readline-devel augeas-devel >= 0.5.2
 BuildRequires:  libxml2-devel libxslt-devel
@@ -50,6 +78,10 @@ developing applications that use %{name}.
 Summary:        Libraries for %{name}
 Group:          System Environment/Libraries
 
+# bridge-utils is needed because /sbin/ifup calls brctl
+# if you create a bridge device
+Requires:       bridge-utils
+
 %description    libs
 The libraries for %{name}.
 
@@ -60,22 +92,57 @@ The libraries for %{name}.
 %if %{with_libnl1}
 %define _with_libnl1 --with-libnl1
 %endif
+%if %{with_systemd}
+    %define sysinit --with-sysinit=systemd
+%else
+    %define sysinit --with-sysinit=initscripts
+%endif
+
+
+%if 0%{?enable_autotools}
+ autoreconf -if
+%endif
 
 %configure --disable-static \
-           %{?_with_libnl1}
+           %{?_with_libnl1} \
+           %{sysinit}
 make %{?_smp_mflags}
 
 %install
 rm -rf $RPM_BUILD_ROOT
-make install DESTDIR=$RPM_BUILD_ROOT INSTALL="%{__install} -p"
+make install DESTDIR=$RPM_BUILD_ROOT SYSTEMD_UNIT_DIR=%{_unitdir} \
+     INSTALL="%{__install} -p"
 find $RPM_BUILD_ROOT -name '*.la' -exec rm -f {} ';'
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
-%post libs -p /sbin/ldconfig
+%preun libs
 
-%postun libs -p /sbin/ldconfig
+%if %{with_systemd}
+    %systemd_preun netcf-transaction.service
+%else
+if [ $1 = 0 ]; then
+    /sbin/chkconfig --del netcf-transaction
+fi
+%endif
+
+%post libs
+
+/sbin/ldconfig
+%if %{with_systemd}
+    %systemd_post netcf-transaction.service
+    /bin/systemctl --no-reload enable netcf-transaction.service >/dev/null 2>&1 || :
+%else
+/sbin/chkconfig --add netcf-transaction
+%endif
+
+%postun libs
+
+/sbin/ldconfig
+%if %{with_systemd}
+    %systemd_postun netcf-transaction.service
+%endif
 
 %files
 %defattr(-,root,root,-)
@@ -86,7 +153,12 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 %{_datadir}/netcf
 %{_libdir}/*.so.*
+%if %{with_systemd}
+%{_unitdir}/netcf-transaction.service
+%else
 %{_sysconfdir}/rc.d/init.d/netcf-transaction
+%endif
+%attr(0755, root, root) %{_libexecdir}/netcf-transaction.sh
 %doc AUTHORS COPYING NEWS
 
 %files devel
@@ -97,6 +169,24 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/pkgconfig/netcf.pc
 
 %changelog
+* Fri Aug 22 2014 Laine Stump <laine@redhat.com> - 0.2.6-1
+ - allow interleaved elements in interface XML schema
+ - allow <link> element in vlan and bond interfaces
+
+* Wed Aug 20 2014 Laine Stump <laine@redhat.com> - 0.2.5-1
+ - report link state/speed in interface status
+ - change DHCPv6 to DHCPV6C in ifcfg files
+ - max vlan id is 4095, not 4096
+
+* Wed May 14 2014 Laine Stump <laine@redhat.com> - 0.2.4-1
+ - wait for IFF_UP and IFF_RUNNING after calling ifup
+ - don't require IFF_RUNNING for bridge devices
+ - avoid memory leak in debian when listing interfaces
+ - avoid use of uninitialized data when getting mac address
+   (fixes https://bugzilla.redhat.com/show_bug.cgi?id=1046594 )
+ - limit interface names to IFNAMSIZ-1 characters in length
+ - support systemd for netcf-transaction
+
 * Fri Dec 21 2012 Laine Stump <laine@redhat.com> - 0.2.3-1
 - eliminate calls to nl_cache_mngt_provide(), to avoid
   non-threadsafe code in libnl (and because it isn't needed
@@ -150,14 +240,14 @@ rm -rf $RPM_BUILD_ROOT
   to pulling in extra packages when building an application that uses netcf.
 - Reorganize code to simplify porting to other platforms.
 
-* Thu Sep 24 2010 Laine Stump <laine@redhat.com> - 0.1.7-1
+* Fri Sep 24 2010 Laine Stump <laine@redhat.com> - 0.1.7-1
 - remove code that modifies iptables config for bridges
 - register gnulib as a proper submodule
 - don't delete physical interface config when defining a vlan
 - properly handle quoted entries in sysconfig files.
 - make miimon/arpmon optional
 
-* Thu Apr 16 2010 Laine Stump <laine@redhat.com> - 0.1.6-1
+* Fri Apr 16 2010 Laine Stump <laine@redhat.com> - 0.1.6-1
 - New version
 
 * Mon Nov 30 2009 David Lutterkort <lutter@redhat.com> - 0.1.5-1

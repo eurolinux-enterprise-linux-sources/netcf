@@ -1,8 +1,8 @@
 /*
- * drv_suse.c: the suse backend for suse
+ * drv_suse.c: the suse backend for netcf
  *
  * Copyright (C) 2010 Novell Inc.
- * Copyright (C) 2009-2012 Red Hat Inc.
+ * Copyright (C) 2009-2014 Red Hat Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -57,6 +57,7 @@
 
 #define NETRULE_PATH "/etc/udev/rules.d/70-persistent-net.rules"
 
+#undef NETCF_TRANSACTION
 #define NETCF_TRANSACTION "/bin/false"
 
 static const char *const aug_files =
@@ -1019,6 +1020,9 @@ struct netcf_if *drv_define(struct netcf *ncf, const char *xml_str) {
 
     name = device_name_from_xml(ncf, ncf_xml);
     ERR_COND_BAIL(name == NULL, ncf, EINTERNAL);
+    ERR_THROW(strlen(name) >= IFNAMSIZ, ncf, EINTERNAL,
+              "The interface name '%s' exceeds the maximum allowed length: %d",
+              name, IFNAMSIZ - 1);
 
     rm_all_interfaces(ncf, ncf_xml);
     ERR_BAIL(ncf);
@@ -1132,7 +1136,7 @@ int drv_lookup_by_mac_string(struct netcf *ncf, const char *mac,
 
 const char *drv_mac_string(struct netcf_if *nif) {
     struct netcf *ncf = nif->ncf;
-    const char *mac;
+    const char *mac = NULL;
     char *path = NULL;
     int r;
 
@@ -1164,6 +1168,7 @@ int drv_if_up(struct netcf_if *nif) {
     char **slaves = NULL;
     int nslaves = 0;
     int result = -1;
+    int is_active, retries;
 
     if (is_bridge(ncf, nif->name)) {
         /* Bring up bridge slaves before the bridge */
@@ -1177,7 +1182,13 @@ int drv_if_up(struct netcf_if *nif) {
     }
     run1(ncf, ifup, nif->name);
     ERR_BAIL(ncf);
-    ERR_THROW(!if_is_active(ncf, nif->name), ncf, EOTHER,
+
+    for (retries = 0; retries < 10; retries++) {
+        if ((is_active = if_is_active(ncf, nif->name)))
+            break;
+        usleep(250000);
+    }
+    ERR_THROW(!is_active, ncf, EOTHER,
               "interface %s failed to become active - "
               "possible disconnected cable.", nif->name);
     result = 0;

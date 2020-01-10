@@ -1,0 +1,23 @@
+  /home/laine/devel/netcf/tests/debian/schema:
+  total used in directory 84 available 102218832
+  drwxr-xr-x. 2 laine laine 4096 Sep 22 12:15 .
+  drwxr-xr-x. 4 laine laine 4096 Sep 22 12:15 ..
+  -rw-r--r--. 1 laine laine  696 Sep 22 12:15 bond-arp.xml
+  -rw-r--r--. 1 laine laine  633 Sep 22 12:15 bond-defaults.xml
+  -rw-r--r--. 1 laine laine  815 Sep 22 12:15 bond.xml
+  -rw-r--r--. 1 laine laine  954 Sep 22 12:15 bridge-bond.xml
+  -rw-r--r--. 1 laine laine  464 Sep 22 12:15 bridge-empty.xml
+  -rw-r--r--. 1 laine laine  615 Sep 22 12:15 bridge-no-address.xml
+  -rw-r--r--. 1 laine laine  695 Sep 22 12:15 bridge-vlan.xml
+  -rw-r--r--. 1 laine laine  653 Sep 22 12:15 bridge.xml
+  -rw-r--r--. 1 laine laine  539 Sep 22 12:15 ethernet-dhcp.xml
+  -rw-r--r--. 1 laine laine  586 Sep 22 12:15 ethernet-static-no-prefix.xml
+  -rw-r--r--. 1 laine laine  633 Sep 22 12:15 ethernet-static.xml
+  -rw-r--r--. 1 laine laine  348 Sep 22 12:15 ipv6-autoconf-dhcp.xml
+  -rw-r--r--. 1 laine laine  350 Sep 22 12:15 ipv6-autoconf.xml
+  -rw-r--r--. 1 laine laine  509 Sep 22 12:15 ipv6-dhcp.xml
+  -rw-r--r--. 1 laine laine  511 Sep 22 12:15 ipv6-local.xml
+  -rw-r--r--. 1 laine laine  918 Sep 22 12:15 ipv6-static-multi.xml
+  -rw-r--r--. 1 laine laine  654 Sep 22 12:15 ipv6-static.xml
+  -rw-r--r--. 1 laine laine  159 Sep 22 12:15 schemas.xml
+  -rw-r--r--. 1 laine laine  445 Sep 22 12:15 vlan.xml

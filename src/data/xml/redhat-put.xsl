@@ -77,7 +77,17 @@
       <xsl:call-template name="interface-addressing"/>
       <bridge>
         <xsl:if test="node[@label = 'STP']">
-          <xsl:attribute name="stp"><xsl:value-of select="node[@label = 'STP']/@value"/></xsl:attribute>
+          <xsl:choose>
+            <xsl:when test="node[@label = 'STP']/@value = 'yes'">
+              <xsl:attribute name="stp">on</xsl:attribute>
+            </xsl:when>
+            <xsl:when test="node[@label = 'STP']/@value = 'no'">
+              <xsl:attribute name="stp">off</xsl:attribute>
+            </xsl:when>
+            <xsl:otherwise>
+              <xsl:attribute name="stp"><xsl:value-of select="node[@label = 'STP']/@value"/></xsl:attribute>
+            </xsl:otherwise>
+          </xsl:choose>
         </xsl:if>
         <xsl:if test="node[@label = 'DELAY']">
           <xsl:attribute name="delay"><xsl:value-of select="node[@label = 'DELAY']/@value"/></xsl:attribute>
@@ -211,7 +221,7 @@
         <xsl:if test="node[@label = 'IPV6_AUTOCONF'][@value = 'yes']">
           <autoconf/>
         </xsl:if>
-        <xsl:if test="node[@label = 'DHCPV6'][@value = 'yes']">
+        <xsl:if test="node[@label = 'DHCPV6C'][@value = 'yes']">
           <dhcp/>
         </xsl:if>
         <xsl:if test="node[@label = 'IPV6ADDR']">

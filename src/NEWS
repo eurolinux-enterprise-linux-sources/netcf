@@ -1,3 +1,22 @@
+0.2.6 - 2014-08-22
+ - allow interleaved elements in interface XML schema
+ - allow <link> element in vlan and bond interfaces
+
+0.2.5 - 2014-08-20
+ - report link state/speed in interface status
+ - change DHCPv6 to DHCPV6C in ifcfg files
+ - max vlan id is 4095, not 4096
+
+0.2.4 - 2014-05-14
+
+ - wait for IFF_UP and IFF_RUNNING after calling ifup
+ - don't require IFF_RUNNING for bridge devices
+ - avoid memory leak in debian when listing interfaces
+ - avoid use of uninitialized data when getting mac address
+   (fixes https://bugzilla.redhat.com/show_bug.cgi?id=1046594 )
+ - limit interface names to IFNAMSIZ-1 characters in length
+ - support systemd for netcf-transaction
+
 0.2.3 - 2012-12-21
 
   - eliminate calls to nl_cache_mngt_provide(), to avoid

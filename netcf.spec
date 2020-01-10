@@ -1,6 +1,6 @@
 Name:           netcf
-Version:        0.2.3
-Release:        8%{?dist}%{?extra_release}
+Version:        0.2.6
+Release:        3%{?dist}%{?extra_release}
 Summary:        Cross-platform network configuration library
 
 Group:          System Environment/Libraries
@@ -10,20 +10,20 @@ Source0:        https://fedorahosted.org/released/%{name}/%{name}-%{version}.tar
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 # Patches
-Patch1: netcf-wait-for-IFF_UP-and-IFF_RUNNING-after-calling-ifup.patch
-Patch2: netcf-remove-extraneous-quotes-from-BONDING_OPTS.patch
-Patch3: netcf-eliminate-use-of-uninitialized-data-when-getting-mac.patch
-Patch4: netcf-support-systemd-based-netcf-transaction.patch
-Patch5: netcf-fix-autogen-build-error.patch
-Patch6: netcf-transform-STP-value-from-yes-no-to-on-off-in-redhat-.patch
-Patch7: netcf-Require-bridge-utils-for-netcf-libs-in-the-specfile.patch
+Patch1: netcf-Report-file-path-and-reason-when-aug_save-fails.patch 
+Patch2: netcf-Recognize-IPADDR0-PREFIX0-NETMASK0-GATEWAY0-in-redha.patch 
+Patch3: netcf-Better-messages-on-failure-reading-sys-class-net-dev.patch
+Patch4: netcf-Don-t-return-error-if-sys-class-net-dev-operstate-is.patch
+
 
 # Default to skipping autoreconf.  Distros can change just this one
 # line (or provide a command-line override) if they backport any
 # patches that touch configure.ac or Makefile.am.
-# THIS HAS BEEN ENABLED FOR RHEL7.0 because Patch4 modifies configure.ac
-# and src/Makefile.am.
-%{!?enable_autotools:%define enable_autotools 1}
+%{!?enable_autotools:%define enable_autotools 0}
+
+# git is used to build a source tree with patches applied (see the
+# %prep section)
+BuildRequires: git
 
 # Fedora 20 / RHEL-7 are where netcf first uses systemd. Although earlier
 # Fedora has systemd, netcf still used sysvinit there.
@@ -99,13 +99,41 @@ The libraries for %{name}.
 %prep
 %setup -q
 
-%patch1 -p1
-%patch2 -p1
-%patch3 -p1
-%patch4 -p1
-%patch5 -p1
-%patch6 -p1
-%patch7 -p1
+# Patches have to be stored in a temporary file because RPM has
+# a limit on the length of the result of any macro expansion;
+# if the string is longer, it's silently cropped
+%{lua:
+    tmp = os.tmpname();
+    f = io.open(tmp, "w+");
+    count = 0;
+    for i, p in ipairs(patches) do
+        f:write(p.."\n");
+        count = count + 1;
+    end;
+    f:close();
+    print("PATCHCOUNT="..count.."\n")
+    print("PATCHLIST="..tmp.."\n")
+}
+
+git init -q
+git config user.name rpm-build
+git config user.email rpm-build
+git config gc.auto 0
+git add .
+git commit -q -a --author 'rpm-build <rpm-build>' \
+           -m '%{name}-%{version} base'
+
+COUNT=$(grep '\.patch$' $PATCHLIST | wc -l)
+if [ $COUNT -ne $PATCHCOUNT ]; then
+    echo "Found $COUNT patches in $PATCHLIST, expected $PATCHCOUNT"
+    exit 1
+fi
+if [ $COUNT -gt 0 ]; then
+    xargs git am <$PATCHLIST || exit 1
+fi
+echo "Applied $COUNT patches"
+rm -f $PATCHLIST
+
 
 %build
 %if %{with_libnl1}
@@ -116,6 +144,7 @@ The libraries for %{name}.
 %else
     %define sysinit --with-sysinit=initscripts
 %endif
+
 
 %if 0%{?enable_autotools}
  autoreconf -if
@@ -187,6 +216,26 @@ fi
 %{_libdir}/pkgconfig/netcf.pc
 
 %changelog
+* Tue Jan 27 2015 - Laine Stump <laine@redhat.com> 0.2.6-3
+ - resolves rhbz#1185850
+ - don't treat failure to read /sys/class/net/$def/operstate as an error
+
+* Thu Nov 13 2014 - Laine Stump <laine@redhat.com> 0.2.6-2
+ - resolves rhbz#1138196
+ - report file path and reason when aug_save fails
+ - resolves rhbz#1147650
+ - recognize IPADDR0/PREFIX0/NETMASK0/GATEWAY0
+ - use git to apply patches to source tree
+
+* Fri Aug 22 2014 Laine Stump <laine@redhat.com> - 0.2.6-1
+ - resolves rhbz#1115176
+ - rebase to upstream 0.2.6
+ - allow interleaved elements in interface XML schema
+ - allow <link> element in vlan and bond interfaces
+ - report link state/speed in interface status
+ - change DHCPv6 to DHCPV6C in ifcfg files
+ - max vlan id is 4095, not 4096
+
 * Tue Feb 11 2014 Laine Stump <laine@redhat.com> - 0.2.3-8
 - resolves rhbz 1060076
 - Transform STP value from yes/no to on/off
