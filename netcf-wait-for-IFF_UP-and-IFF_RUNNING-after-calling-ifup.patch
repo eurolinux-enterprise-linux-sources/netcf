@@ -1,0 +1,65 @@
+From 23d29530d468a4d28fda3bedae0a1c0ab5d7c177 Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Wed, 15 May 2013 14:13:09 -0400
+Subject: [PATCH 3/3] wait for IFF_UP and IFF_RUNNING after calling ifup
+
+This fixes https://bugzilla.redhat.com/show_bug.cgi?id=961184
+which was a regression caused by the fix to
+https://bugzilla.redhat.com/show_bug.cgi?id=844578
+
+Apparently one or the other of IFF_UP and IFF_RUNNING are not always
+set by the time /sbin/ifup returns control to netcf, so the subsequent
+check to verify that the interface is up may fail. This patch adds a
+loop to re-check the status of the interface every 250msec for up to
+2.5 seconds (or until both flags are set). If timeout is reached, it
+still fails the operation.
+(cherry picked from commit 14af66fa2b119f47a23c9a4043ae8fe2441379fc)
+
+Conflicts:
+	bootstrap.conf   - added in later version of netcf
+	src/drv_debian.c - added in later version of netcf
+	src/drv_suse.c   - added in later version of netcf
+	src/drv_initscripts.c - trivial copyright date change
+---
+ src/drv_initscripts.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/src/drv_initscripts.c b/src/drv_initscripts.c
+index 15dbbd8..6ea5ccc 100644
+--- a/src/drv_initscripts.c
++++ b/src/drv_initscripts.c
+@@ -1,7 +1,7 @@
+ /*
+  * drv_initscripts.c: the initscripts backend for netcf
+  *
+- * Copyright (C) 2009 Red Hat Inc.
++ * Copyright (C) 2009-2013 Red Hat Inc.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -1026,6 +1026,7 @@ int drv_if_up(struct netcf_if *nif) {
+     char **slaves = NULL;
+     int nslaves = 0;
+     int result = -1;
++    int is_active, retries;
+ 
+     if (is_bridge(ncf, nif->name)) {
+         /* Bring up bridge slaves before the bridge */
+@@ -1039,7 +1040,13 @@ int drv_if_up(struct netcf_if *nif) {
+     }
+     run1(ncf, ifup, nif->name);
+     ERR_BAIL(ncf);
+-    ERR_THROW(!if_is_active(ncf, nif->name), ncf, EOTHER,
++
++    for (retries = 0; retries < 10; retries++) {
++        if ((is_active = if_is_active(ncf, nif->name)))
++            break;
++        usleep(250000);
++    }
++    ERR_THROW(!is_active, ncf, EOTHER,
+               "interface %s failed to become active - "
+               "possible disconnected cable.", nif->name);
+     result = 0;
+-- 
+1.7.11.7
+

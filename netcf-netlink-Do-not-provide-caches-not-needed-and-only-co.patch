@@ -1,0 +1,46 @@
+From ca53e335a7f321e12d575fc0e27864603b40e363 Mon Sep 17 00:00:00 2001
+From: Thomas Graf <tgraf@redhat.com>
+Date: Tue, 18 Dec 2012 16:40:56 +0100
+Subject: [PATCH] netlink: Do not provide caches, not needed and only
+ complicates thread safety
+
+netcf does not utilize any of the functionality that would require
+providing the caches. Doing so only exposes the cache to possibly
+unwanted users.
+
+Signed-off-by: Thomas Graf <tgraf@redhat.com>
+(cherry picked from commit 9aadccd57ef2ce3769475f52bc1c30cd689c8085)
+---
+ src/dutil_linux.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/src/dutil_linux.c b/src/dutil_linux.c
+index 1a3a86e..915f898 100644
+--- a/src/dutil_linux.c
++++ b/src/dutil_linux.c
+@@ -1,7 +1,7 @@
+ /*
+  * dutil_linux.c: Linux utility functions for driver backends.
+  *
+- * Copyright (C) 2009, 2011 Red Hat Inc.
++ * Copyright (C) 2009, 2011, 2012 Red Hat Inc.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -716,13 +716,11 @@ int netlink_init(struct netcf *ncf) {
+     if (ncf->driver->link_cache == NULL) {
+         goto error;
+     }
+-    nl_cache_mngt_provide(ncf->driver->link_cache);
+ 
+     ncf->driver->addr_cache = rtnl_addr_alloc_cache(ncf->driver->nl_sock);
+     if (ncf->driver->addr_cache == NULL) {
+         goto error;
+     }
+-    nl_cache_mngt_provide(ncf->driver->addr_cache);
+ 
+     int netlink_fd = nl_socket_get_fd(ncf->driver->nl_sock);
+     if (netlink_fd >= 0)
+-- 
+1.7.11.7
+
