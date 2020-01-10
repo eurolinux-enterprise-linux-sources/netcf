@@ -1,7 +1,8 @@
 <?xml version="1.0"?>
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                 xmlns:ipcalc = "http://redhat.com/xslt/netcf/ipcalc/1.0"
-                extension-element-prefixes="ipcalc"
+                xmlns:pathcomponent = "http://redhat.com/xslt/netcf/pathcomponent/1.0"
+                extension-element-prefixes="ipcalc pathcomponent"
                 version="1.0">
 
   <xsl:import href="util-get.xsl"/>
@@ -45,7 +46,7 @@
   </xsl:template>
 
   <xsl:template name="vlan-interface-common">
-    <xsl:variable name="iface" select="concat(vlan/interface/@name, '.', vlan/@tag)"/>
+    <xsl:variable name="iface" select="pathcomponent:escape(concat(vlan/interface/@name, '.', vlan/@tag))"/>
 
     <xsl:attribute name="path">/files/etc/sysconfig/network-scripts/ifcfg-<xsl:value-of select="$iface"/></xsl:attribute>
     <node label="DEVICE" value="{$iface}"/>
@@ -138,7 +139,7 @@
        Named templates, following the Relax NG syntax
   -->
   <xsl:template name="name-attr">
-    <xsl:attribute name="path">/files/etc/sysconfig/network-scripts/ifcfg-<xsl:value-of select="@name"/></xsl:attribute>
+    <xsl:attribute name="path">/files/etc/sysconfig/network-scripts/ifcfg-<xsl:value-of select="pathcomponent:escape(@name)"/></xsl:attribute>
     <node label="DEVICE" value="{@name}"/>
   </xsl:template>
 
@@ -182,25 +183,42 @@
   </xsl:template>
 
   <xsl:template name="protocol-ipv4">
-    <xsl:choose>
-      <xsl:when test="dhcp">
-        <node label="BOOTPROTO" value="dhcp"/>
-        <xsl:if test="dhcp/@peerdns">
-          <node label="PEERDNS" value="{dhcp/@peerdns}"/>
+    <xsl:if test="count(dhcp) > 0">
+      <node label="BOOTPROTO" value="dhcp"/>
+      <xsl:if test="dhcp/@peerdns">
+        <node label="PEERDNS" value="{dhcp/@peerdns}"/>
+      </xsl:if>
+    </xsl:if>
+    <xsl:if test="count(dhcp) = 0">
+      <node label="BOOTPROTO" value="none"/>
+    </xsl:if>
+    <xsl:if test="count(ip) > 0">
+      <xsl:for-each select="ip">
+        <xsl:if test="position() = 1">
+          <xsl:call-template name="ipv4-address">
+            <xsl:with-param name="index"/>
+          </xsl:call-template>
         </xsl:if>
-      </xsl:when>
-      <xsl:when test="ip">
-        <node label="BOOTPROTO" value="none"/>
-        <node label="IPADDR" value="{ip/@address}"/>
-        <xsl:if test="ip/@prefix">
-          <node label="NETMASK" value="{ipcalc:netmask(ip/@prefix)}"/>
+        <xsl:if test="position() > 1 and position() &lt; 101">
+          <xsl:call-template name="ipv4-address">
+            <xsl:with-param name="index" select="position() - 1"/>
+          </xsl:call-template>
         </xsl:if>
-        <xsl:if test="route">
-          <node label="GATEWAY" value="{route/@gateway}"/>
-        </xsl:if>
-      </xsl:when>
-    </xsl:choose>
+      </xsl:for-each>
+      <xsl:if test="route">
+        <node label="GATEWAY" value="{route/@gateway}"/>
+      </xsl:if>
+    </xsl:if>
   </xsl:template>
+
+  <xsl:template name="ipv4-address">
+    <xsl:param name="index"/>
+    <node label="IPADDR{$index}" value="{@address}"/>
+    <xsl:if test="@prefix">
+      <node label="NETMASK{$index}" value="{ipcalc:netmask(@prefix)}"/>
+    </xsl:if>
+  </xsl:template>
+
 
   <xsl:template name="protocol-ipv6">
     <node label="IPV6INIT" value="yes"/>
@@ -226,14 +244,12 @@
     <xsl:if test="count(ip) > 1">
       <node label="IPV6ADDR_SECONDARIES">
         <xsl:attribute name="value">
-          <xsl:text>'</xsl:text>
           <xsl:for-each select="ip[1]/following-sibling::ip[following-sibling::ip]">
             <xsl:value-of select="@address"/><xsl:if test="@prefix">/<xsl:value-of select="@prefix"/></xsl:if><xsl:value-of select="string(' ')"/>
           </xsl:for-each>
           <xsl:for-each select="ip[last()]">
             <xsl:value-of select="@address"/><xsl:if test="@prefix">/<xsl:value-of select="@prefix"/></xsl:if>
           </xsl:for-each>
-          <xsl:text>'</xsl:text>
         </xsl:attribute>
       </node>
     </xsl:if>

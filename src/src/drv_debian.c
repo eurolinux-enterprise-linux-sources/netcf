@@ -1,7 +1,7 @@
 /*
  * drv_debian.c: the debian backend for netcf
  *
- * Copyright (C) 2009-2014 Red Hat Inc.
+ * Copyright (C) 2009-2015 Red Hat Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -125,7 +125,7 @@ static bool is_bridge(struct netcf *ncf, const char *name) {
 }
 
 static int interface_deps(struct netcf *ncf, char ***slaves, const char *fmt, ...) {
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
     char *path = NULL;
     int r, nslaves = 0;
     char **matches = NULL;
@@ -156,7 +156,7 @@ static int interface_deps(struct netcf *ncf, char ***slaves, const char *fmt, ..
         r = aug_get(aug, matches[i], &devs);
         ERR_COND_BAIL(r < 0, ncf, EOTHER);
 
-        if (strcmp(devs, "none") == 0)
+        if (r != 1 || !devs || STREQ(devs, "none"))
             continue;
 
         do {
@@ -273,7 +273,7 @@ static bool has_config(struct netcf *ncf, const char *name) {
 static int uniq_device_names(struct netcf *ncf,
                             int ndevs, char **devs,
                             char ***intf) {
-    struct augeas *aug;
+    augeas *aug;
     int r;
     int ndevnames = 0;
     const char **devnames = NULL;
@@ -288,7 +288,7 @@ static int uniq_device_names(struct netcf *ncf,
     for (int i=0; i < ndevs; i++) {
         const char *name = NULL;
         r = aug_get(aug, devs[i], &name);
-        ERR_COND_BAIL(r != 1, ncf, EOTHER);
+        ERR_COND_BAIL(r != 1 || !name, ncf, EOTHER);
         int exists = 0;
         for (int j = 0; j < ndevnames; j++)
             if (STREQ(name, devnames[j])) {
@@ -500,7 +500,7 @@ struct netcf_if *drv_lookup_by_name(struct netcf *ncf, const char *name) {
 static int aug_get_xml_for_intf(struct netcf *ncf,
                                 xmlNodePtr array,
                                 const char *name) {
-    struct augeas *aug;
+    augeas *aug;
     xmlNodePtr element = NULL, node = NULL;
     char **matches = NULL;
     char **intf = NULL;
@@ -528,7 +528,7 @@ static int aug_get_xml_for_intf(struct netcf *ncf,
             xmlNewProp(node, BAD_CAST "label",
                        BAD_CAST matches[j] + strlen(intf[i]) + 1);
             r = aug_get(aug, matches[j], &value);
-            ERR_COND_BAIL(r < 0, ncf, EOTHER);
+            ERR_COND_BAIL(r != 1 || !value, ncf, EOTHER);
             xmlNewProp(node, BAD_CAST "value", BAD_CAST value);
         }
 
@@ -912,10 +912,6 @@ struct netcf_if *drv_define(struct netcf *ncf, const char *xml_str) {
     struct netcf_if *result = NULL;
     xmlDocPtr ncf_xml = NULL, aug_xml = NULL;
     char *name = NULL;
-    int r;
-    struct augeas *aug = get_augeas(ncf);
-
-    ERR_BAIL(ncf);
 
     ncf_xml = parse_xml(ncf, xml_str);
     ERR_BAIL(ncf);
@@ -941,12 +937,8 @@ struct netcf_if *drv_define(struct netcf *ncf, const char *xml_str) {
     bond_setup(ncf, name, true);
     ERR_BAIL(ncf);
 
-    r = aug_save(aug);
-    if (r < 0 && NCF_DEBUG(ncf)) {
-        fprintf(stderr, "Errors from aug_save:\n");
-        aug_print(aug, stderr, "/augeas//error");
-    }
-    ERR_THROW(r < 0, ncf, EOTHER, "aug_save failed");
+    aug_save_assert(ncf);
+    ERR_BAIL(ncf);
 
     result = make_netcf_if(ncf, name);
     ERR_BAIL(ncf);
@@ -961,12 +953,7 @@ struct netcf_if *drv_define(struct netcf *ncf, const char *xml_str) {
 }
 
 int drv_undefine(struct netcf_if *nif) {
-    struct augeas *aug = NULL;
     struct netcf *ncf = nif->ncf;
-    int r;
-
-    aug = get_augeas(ncf);
-    ERR_BAIL(ncf);
 
     bond_setup(ncf, nif->name, false);
     ERR_BAIL(ncf);
@@ -974,8 +961,8 @@ int drv_undefine(struct netcf_if *nif) {
     rm_interface(ncf, nif->name);
     ERR_BAIL(ncf);
 
-    r = aug_save(aug);
-    ERR_COND_BAIL(r < 0, ncf, EOTHER);
+    aug_save_assert(ncf);
+    ERR_BAIL(ncf);
 
     return 0;
  error:

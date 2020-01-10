@@ -1,7 +1,7 @@
 /*
  * dutil_linux.h: Linux utility functions for driver backends.
  *
- * Copyright (C) 2009 Red Hat Inc.
+ * Copyright (C) 2009-2011, 2014-2015 Red Hat Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -34,7 +34,7 @@
 #endif
 
 struct driver {
-    struct augeas     *augeas;
+    augeas     *augeas;
     xsltStylesheetPtr  put;
     xsltStylesheetPtr  get;
     int                ioctl_fd;
@@ -67,12 +67,22 @@ int remove_augeas_xfm_table(struct netcf *ncf,
                             const struct augeas_xfm_table *table);
 
 /* Get or create the augeas instance from NCF */
-struct augeas *get_augeas(struct netcf *ncf);
+augeas *get_augeas(struct netcf *ncf);
+
+/* Save changes in augeas and raise error with message on failure */
+int aug_save_assert(struct netcf *ncf);
 
 /* Define a node inside the augeas tree */
 ATTRIBUTE_FORMAT(printf, 4, 5)
 int defnode(struct netcf *ncf, const char *name, const char *value,
                    const char *format, ...);
+
+/* wrappers around the augeas aug_escape_name() API. This is done so
+ * that we can escape path components without requiring the
+ * aug_escape_name() API in the version of augeas used for building.
+ */
+int aug_escape_name_wrap(struct netcf *ncf, const augeas *aug,
+                         const char *in, char **out);
 
 /* Format a path by doing a printf of FMT and the var args, then call
    AUG_MATCH on that path. Sets NCF->ERRCODE on error */

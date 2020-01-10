@@ -1,6 +1,6 @@
 Name:           netcf
-Version:        0.2.6
-Release:        3%{?dist}%{?extra_release}
+Version:        0.2.8
+Release:        1%{?dist}%{?extra_release}
 Summary:        Cross-platform network configuration library
 
 Group:          System Environment/Libraries
@@ -10,11 +10,15 @@ Source0:        https://fedorahosted.org/released/%{name}/%{name}-%{version}.tar
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 # Patches
-Patch1: netcf-Report-file-path-and-reason-when-aug_save-fails.patch 
-Patch2: netcf-Recognize-IPADDR0-PREFIX0-NETMASK0-GATEWAY0-in-redha.patch 
-Patch3: netcf-Better-messages-on-failure-reading-sys-class-net-dev.patch
-Patch4: netcf-Don-t-return-error-if-sys-class-net-dev-operstate-is.patch
-
+# One patch per line, in this format:
+# Patch001: file1.patch
+# Patch002: file2.patch
+# ...
+#
+# The patches will automatically be put into the build source tree
+# during the %prep stage (using git, which is now required for an rpm
+# build)
+#
 
 # Default to skipping autoreconf.  Distros can change just this one
 # line (or provide a command-line override) if they backport any
@@ -34,11 +38,10 @@ BuildRequires: git
 %endif
 
 %if %{with_systemd}
-BuildRequires: systemd-units
-Requires(post): systemd-units
-Requires(post): systemd-sysv
-Requires(preun): systemd-units
-Requires(postun): systemd-units
+BuildRequires: systemd
+Requires(post): systemd
+Requires(preun): systemd
+Requires(postun): systemd
 %endif
 %if 0%{?enable_autotools}
 BuildRequires: autoconf
@@ -156,13 +159,9 @@ rm -f $PATCHLIST
 make %{?_smp_mflags}
 
 %install
-rm -rf $RPM_BUILD_ROOT
 make install DESTDIR=$RPM_BUILD_ROOT SYSTEMD_UNIT_DIR=%{_unitdir} \
      INSTALL="%{__install} -p"
-find $RPM_BUILD_ROOT -name '*.la' -exec rm -f {} ';'
-
-%clean
-rm -rf $RPM_BUILD_ROOT
+find $RPM_BUILD_ROOT -name '*.la' -delete
 
 %preun libs
 
@@ -192,12 +191,10 @@ fi
 %endif
 
 %files
-%defattr(-,root,root,-)
 %{_bindir}/ncftool
 %{_mandir}/man1/ncftool.1*
 
 %files libs
-%defattr(-,root,root,-)
 %{_datadir}/netcf
 %{_libdir}/*.so.*
 %if %{with_systemd}
@@ -209,13 +206,26 @@ fi
 %doc AUTHORS COPYING NEWS
 
 %files devel
-%defattr(-,root,root,-)
 %doc
 %{_includedir}/*
 %{_libdir}/*.so
 %{_libdir}/pkgconfig/netcf.pc
 
 %changelog
+* Wed May 20 2015 Laine Stump <laine@redhat.com> - 0.2.8-1
+ - Rebase to netcf-0.2.8
+ - resolve rhbz#1165965 - CVE-2014-8119
+ - resolve rhbz#1159000
+ - support multiple IPv4 addresses in interface config (redhat driver)
+ - resolve rhbz#1113983
+ - allow static IPv4 config simultaneous with DHCPv4 (redhat driver)
+ - resolve rhbz#1170941
+ - remove extra quotes from IPV6ADDR_SECONDARIES (redhat+suse drivers)
+ - resolve rhbz#1090011
+ - limit names of new interfaces to IFNAMSIZ characters
+ - resolve rhbz#761246
+ - properly parse ifcfg files with comments past column 1
+
 * Tue Jan 27 2015 - Laine Stump <laine@redhat.com> 0.2.6-3
  - resolves rhbz#1185850
  - don't treat failure to read /sys/class/net/$def/operstate as an error

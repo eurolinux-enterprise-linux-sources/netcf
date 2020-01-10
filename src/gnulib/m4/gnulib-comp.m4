@@ -1,5 +1,5 @@
 # DO NOT EDIT! GENERATED AUTOMATICALLY!
-# Copyright (C) 2002-2014 Free Software Foundation, Inc.
+# Copyright (C) 2002-2015 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -48,6 +48,8 @@ AC_DEFUN([gl_EARLY],
   # Code from module binary-io-tests:
   # Code from module c-ctype:
   # Code from module c-ctype-tests:
+  # Code from module c-strcase:
+  # Code from module c-strcase-tests:
   # Code from module close:
   # Code from module close-tests:
   # Code from module configmake:
@@ -108,8 +110,14 @@ AC_DEFUN([gl_EARLY],
   # Code from module inttypes:
   # Code from module inttypes-incomplete:
   # Code from module inttypes-tests:
+  # Code from module langinfo:
+  # Code from module langinfo-tests:
   # Code from module largefile:
   AC_REQUIRE([AC_SYS_LARGEFILE])
+  # Code from module locale:
+  # Code from module locale-tests:
+  # Code from module localename:
+  # Code from module localename-tests:
   # Code from module lock:
   # Code from module lock-tests:
   # Code from module lseek:
@@ -147,6 +155,8 @@ AC_DEFUN([gl_EARLY],
   # Code from module posix_spawnp:
   # Code from module posix_spawnp-tests:
   # Code from module pthread:
+  AC_DEFINE([_REENTRANT], 1, [For thread-safety on OSF/1, Solaris.])
+  AC_DEFINE([_THREAD_SAFE], 1, [For thread-safety on AIX, FreeBSD.])
   # Code from module putenv:
   # Code from module raise:
   # Code from module raise-tests:
@@ -162,6 +172,8 @@ AC_DEFUN([gl_EARLY],
   # Code from module sched-tests:
   # Code from module setenv:
   # Code from module setenv-tests:
+  # Code from module setlocale:
+  # Code from module setlocale-tests:
   # Code from module signal:
   # Code from module signal-h:
   # Code from module signal-h-tests:
@@ -357,6 +369,7 @@ AC_DEFUN([gl_INIT],
   gl_UNISTD_MODULE_INDICATOR([lseek])
   AC_CONFIG_COMMANDS_PRE([m4_ifdef([AH_HEADER],
     [AC_SUBST([CONFIG_INCLUDE], m4_defn([AH_HEADER]))])])
+  AC_REQUIRE([AC_PROG_SED])
   gl_FUNC_MALLOC_POSIX
   if test $REPLACE_MALLOC = 1; then
     AC_LIBOBJ([malloc])
@@ -448,8 +461,8 @@ AC_DEFUN([gl_INIT],
     SYS_IOCTL_H_HAVE_WINSOCK2_H_AND_USE_SOCKETS=1
   fi
   gl_SYS_SOCKET_MODULE_INDICATOR([socket])
-  gl_SOCKETLIB
-  gl_SOCKETS
+  AC_REQUIRE([gl_SOCKETLIB])
+  AC_REQUIRE([gl_SOCKETS])
   gl_TYPE_SOCKLEN_T
   gl_SPAWN_H
   gt_TYPE_SSIZE_T
@@ -486,7 +499,7 @@ AC_DEFUN([gl_INIT],
   gl_HEADER_STRING_H
   gl_SYS_IOCTL_H
   AC_PROG_MKDIR_P
-  gl_HEADER_SYS_SOCKET
+  AC_REQUIRE([gl_HEADER_SYS_SOCKET])
   AC_PROG_MKDIR_P
   gl_HEADER_SYS_STAT_H
   AC_PROG_MKDIR_P
@@ -565,6 +578,8 @@ changequote([, ])dnl
   AC_SUBST([gltests_WITNESS])
   gl_module_indicator_condition=$gltests_WITNESS
   m4_pushdef([gl_MODULE_INDICATOR_CONDITION], [$gl_module_indicator_condition])
+  gt_LOCALE_FR
+  gt_LOCALE_TR_UTF8
   gl_FUNC_DUP
   if test $REPLACE_DUP = 1; then
     AC_LIBOBJ([dup])
@@ -599,6 +614,11 @@ changequote([, ])dnl
   AC_C_BIGENDIAN
   gl_INTTYPES_H
   gl_INTTYPES_INCOMPLETE
+  gl_LANGINFO_H
+  gl_LOCALE_H
+  AC_CHECK_FUNCS_ONCE([newlocale])
+  gl_LOCALENAME
+  AC_CHECK_FUNCS_ONCE([newlocale])
   gl_FUNC_LSTAT
   if test $REPLACE_LSTAT = 1; then
     AC_LIBOBJ([lstat])
@@ -672,6 +692,16 @@ changequote([, ])dnl
   gl_FUNC_MMAP_ANON
   AC_CHECK_HEADERS_ONCE([sys/mman.h])
   AC_CHECK_FUNCS_ONCE([mprotect])
+  gl_FUNC_SETLOCALE
+  if test $REPLACE_SETLOCALE = 1; then
+    AC_LIBOBJ([setlocale])
+    gl_PREREQ_SETLOCALE
+  fi
+  gl_LOCALE_MODULE_INDICATOR([setlocale])
+  gt_LOCALE_FR
+  gt_LOCALE_FR_UTF8
+  gt_LOCALE_JA
+  gt_LOCALE_ZH_CN
   AC_CHECK_DECLS_ONCE([alarm])
   AC_REQUIRE([gt_TYPE_WCHAR_T])
   AC_REQUIRE([gt_TYPE_WINT_T])
@@ -796,6 +826,9 @@ AC_DEFUN([gl_FILE_LIST], [
   lib/asprintf.c
   lib/c-ctype.c
   lib/c-ctype.h
+  lib/c-strcase.h
+  lib/c-strcasecmp.c
+  lib/c-strncasecmp.c
   lib/close.c
   lib/dosname.h
   lib/dup2.c
@@ -902,6 +935,7 @@ AC_DEFUN([gl_FILE_LIST], [
   m4/alloca.m4
   m4/arpa_inet_h.m4
   m4/close.m4
+  m4/codeset.m4
   m4/configmake.m4
   m4/dup.m4
   m4/dup2.m4
@@ -929,14 +963,23 @@ AC_DEFUN([gl_FILE_LIST], [
   m4/include_next.m4
   m4/inet_ntop.m4
   m4/inet_pton.m4
+  m4/intlmacosx.m4
   m4/intmax_t.m4
   m4/inttypes-pri.m4
   m4/inttypes.m4
   m4/inttypes_h.m4
+  m4/langinfo_h.m4
   m4/largefile.m4
+  m4/lcmessage.m4
   m4/lib-ld.m4
   m4/lib-link.m4
   m4/lib-prefix.m4
+  m4/locale-fr.m4
+  m4/locale-ja.m4
+  m4/locale-tr.m4
+  m4/locale-zh.m4
+  m4/locale_h.m4
+  m4/localename.m4
   m4/lock.m4
   m4/longlong.m4
   m4/lseek.m4
@@ -966,6 +1009,7 @@ AC_DEFUN([gl_FILE_LIST], [
   m4/safe-alloc.m4
   m4/sched_h.m4
   m4/setenv.m4
+  m4/setlocale.m4
   m4/signal_h.m4
   m4/signalblocking.m4
   m4/size_max.m4
@@ -1020,6 +1064,9 @@ AC_DEFUN([gl_FILE_LIST], [
   tests/test-binary-io.c
   tests/test-binary-io.sh
   tests/test-c-ctype.c
+  tests/test-c-strcase.sh
+  tests/test-c-strcasecmp.c
+  tests/test-c-strncasecmp.c
   tests/test-close.c
   tests/test-dup.c
   tests/test-dup2.c
@@ -1055,6 +1102,9 @@ AC_DEFUN([gl_FILE_LIST], [
   tests/test-init.sh
   tests/test-intprops.c
   tests/test-inttypes.c
+  tests/test-langinfo.c
+  tests/test-locale.c
+  tests/test-localename.c
   tests/test-lock.c
   tests/test-lseek.c
   tests/test-lseek.sh
@@ -1079,6 +1129,10 @@ AC_DEFUN([gl_FILE_LIST], [
   tests/test-safe-alloc.c
   tests/test-sched.c
   tests/test-setenv.c
+  tests/test-setlocale1.c
+  tests/test-setlocale1.sh
+  tests/test-setlocale2.c
+  tests/test-setlocale2.sh
   tests/test-signal-h.c
   tests/test-sigprocmask.c
   tests/test-sleep.c
@@ -1133,9 +1187,14 @@ AC_DEFUN([gl_FILE_LIST], [
   tests=lib/ignore-value.h
   tests=lib/intprops.h
   tests=lib/inttypes.in.h
+  tests=lib/langinfo.in.h
+  tests=lib/locale.in.h
+  tests=lib/localename.c
+  tests=lib/localename.h
   tests=lib/lstat.c
   tests=lib/putenv.c
   tests=lib/same-inode.h
+  tests=lib/setlocale.c
   tests=lib/spawn_faction_addclose.c
   tests=lib/spawn_faction_adddup2.c
   tests=lib/spawn_faction_addopen.c

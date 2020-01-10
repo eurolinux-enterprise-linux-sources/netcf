@@ -1,7 +1,7 @@
 /*
  * dutil_linux.c: Linux utility functions for driver backends.
  *
- * Copyright (C) 2009-2012, 2014 Red Hat Inc.
+ * Copyright (C) 2009-2012, 2014-2015 Red Hat Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -54,8 +54,8 @@
 #include "dutil.h"
 #include "dutil_linux.h"
 
-#ifndef HAVE_LIBNL3
-#include <net/if.h>
+#ifndef AVOID_NET_IF_H
+# include <net/if.h>
 #endif
 #include <netlink/socket.h>
 #include <netlink/cache.h>
@@ -149,11 +149,11 @@ int remove_augeas_xfm_table(struct netcf *ncf,
 /* Get the Augeas instance; if we already initialized it, just return
  * it. Otherwise, create a new one and return that.
  */
-struct augeas *get_augeas(struct netcf *ncf) {
+augeas *get_augeas(struct netcf *ncf) {
     int r;
 
     if (ncf->driver->augeas == NULL) {
-        struct augeas *aug;
+        augeas *aug;
         char *path;
 
         r = xasprintf(&path, "%s/lenses", ncf->data_dir);
@@ -167,7 +167,7 @@ struct augeas *get_augeas(struct netcf *ncf) {
     }
 
     if (ncf->driver->copy_augeas_xfm) {
-        struct augeas *aug = ncf->driver->augeas;
+        augeas *aug = ncf->driver->augeas;
         /* Only look at a few config files */
         r = aug_rm(aug, "/augeas/load/*");
         ERR_THROW(r < 0, ncf, EOTHER, "aug_rm failed in get_augeas");
@@ -189,7 +189,7 @@ struct augeas *get_augeas(struct netcf *ncf) {
     }
 
     if (ncf->driver->load_augeas) {
-        struct augeas *aug = ncf->driver->augeas;
+        augeas *aug = ncf->driver->augeas;
 
         r = aug_load(aug);
         ERR_THROW(r < 0, ncf, EOTHER, "failed to load config files");
@@ -215,10 +215,51 @@ struct augeas *get_augeas(struct netcf *ncf) {
     return NULL;
 }
 
+int aug_save_assert(struct netcf *ncf)
+{
+    int r = -1;
+    const char *err, *errmsg, *path = "unknown";
+    augeas *aug = get_augeas(ncf);
+
+    ERR_BAIL(ncf);
+
+    r = aug_save(aug);
+    if (r >= 0)
+        goto done;
+
+    if (NCF_DEBUG(ncf)) {
+        fprintf(stderr, "Errors from aug_save:\n");
+        aug_print(aug, stderr, "/augeas//error");
+    }
+
+    if (aug_get(aug, "/augeas//error", &err) == 1) {
+        if (aug_get(aug, "/augeas//error/../path", &path) == 1) {
+            /* strip /files prefix */
+            if (path != NULL && *path != '\0')
+                path = strchrnul(path + 1, '/');
+        }
+        if (aug_get(aug, "/augeas//error/message", &errmsg) == 1) {
+            report_error(ncf, NETCF_EOTHER, "aug_save failed on %s: %s (%s)",
+                         path, err, errmsg);
+        } else {
+            report_error(ncf, NETCF_EOTHER, "aug_save failed on %s: %s",
+                         path, err);
+        }
+    } else if (aug_match(aug, "/augeas//error", NULL) > 1) {
+        report_error(ncf, NETCF_EOTHER, "aug_save failed: multiple failures");
+    } else {
+        report_error(ncf, NETCF_EOTHER, "aug_save failed: unknown failure");
+    }
+
+ error:
+ done:
+    return r;
+}
+
 ATTRIBUTE_FORMAT(printf, 4, 5)
 int defnode(struct netcf *ncf, const char *name, const char *value,
                    const char *format, ...) {
-    struct augeas *aug = get_augeas(ncf);
+    augeas *aug = get_augeas(ncf);
     va_list ap;
     char *expr = NULL;
     int r = -1, created;
@@ -241,9 +282,26 @@ int defnode(struct netcf *ncf, const char *name, const char *value,
     return (r < 0) ? -1 : created;
 }
 
+
+/* a wrapper around / functional equivalent of the new augeas api
+ * "aug_escape_name()". It is copied here so that netcf can take
+ * advantage of it even when the installed augeas version is too old.
+ */
+int
+aug_escape_name_wrap(struct netcf *ncf ATTRIBUTE_UNUSED,
+                     const augeas *aug ATTRIBUTE_UNUSED,
+                     const char *in, char **out)
+{
+    /* in the future we will use aug to call the augeas API,
+     * and may use ncf to set error codes
+     */
+    return aug_escape_name_base(in, out);
+}
+
+
 int aug_fmt_set(struct netcf *ncf, const char *value, const char *fmt, ...)
 {
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
     char *path = NULL;
     va_list args;
     int r;
@@ -271,7 +329,7 @@ int aug_fmt_set(struct netcf *ncf, const char *value, const char *fmt, ...)
 
 int aug_fmt_rm(struct netcf *ncf, const char *fmt, ...)
 {
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
     char *path = NULL;
     va_list args;
     int r;
@@ -299,7 +357,7 @@ int aug_fmt_rm(struct netcf *ncf, const char *fmt, ...)
 }
 
 int aug_fmt_match(struct netcf *ncf, char ***matches, const char *fmt, ...) {
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
     char *path = NULL;
     va_list args;
     int r;
@@ -371,13 +429,19 @@ int aug_match_mac(struct netcf *ncf, const char *mac, char ***matches) {
 /* Get the MAC address of the interface INTF */
 int aug_get_mac(struct netcf *ncf, const char *intf, const char **mac) {
     int r = -1;
+    char *escaped_intf = NULL;
     char *path = NULL;
-    struct augeas *aug = get_augeas(ncf);
+    augeas *aug = get_augeas(ncf);
 
     *mac = NULL;
     ERR_BAIL(ncf);
 
-    r = xasprintf(&path, "/files/sys/class/net/%s/address/content", intf);
+    r = aug_escape_name_wrap(ncf, aug, intf, &escaped_intf);
+    ERR_NOMEM(r < 0, ncf);
+
+    r = xasprintf(&path,
+                  "/files/sys/class/net/%s/address/content",
+                  escaped_intf ? escaped_intf : intf);
     ERR_NOMEM(r < 0, ncf);
 
     r = aug_get(aug, path, mac);
@@ -386,6 +450,7 @@ int aug_get_mac(struct netcf *ncf, const char *intf, const char **mac) {
     /* fallthrough intentional */
  error:
     FREE(path);
+    FREE(escaped_intf);
     return r;
 }
 
@@ -395,7 +460,7 @@ int aug_get_mac(struct netcf *ncf, const char *intf, const char **mac) {
  */
 void modprobed_alias_bond(struct netcf *ncf, const char *name) {
     char *path = NULL;
-    struct augeas *aug = get_augeas(ncf);
+    augeas *aug = get_augeas(ncf);
     int r, nmatches;
 
     ERR_BAIL(ncf);
@@ -434,7 +499,7 @@ void modprobed_alias_bond(struct netcf *ncf, const char *name) {
 /* Remove the alias for NAME to the bonding module */
 void modprobed_unalias_bond(struct netcf *ncf, const char *name) {
     char *path = NULL;
-    struct augeas *aug = get_augeas(ncf);
+    augeas *aug = get_augeas(ncf);
     int r;
 
     ERR_BAIL(ncf);
@@ -1040,14 +1105,22 @@ static void add_link_info(struct netcf *ncf,
     xasprintf(&path, "/sys/class/net/%s/operstate", ifname);
     ERR_NOMEM(!path, ncf);
     state = read_file(path, &length);
-    FREE(path);
-    ERR_THROW_STRERROR(!state, ncf, EFILE, "Failed to read %s", path);
+    if (!state) {
+        /* missing operstate is *not* an error. It could be due to an
+         * alias interface, which has no entry in /sys/class/net at
+         * all, for example. This is similar to the situation where we
+         * can't find an ifindex in add_ethernet_info().
+         */
+        state = strdup("");
+        ERR_NOMEM(!state, ncf);
+    }
     if ((nl = strchr(state, '\n')))
         *nl = 0;
     prop = xmlSetProp(link_node, BAD_CAST "state", BAD_CAST state);
     ERR_NOMEM(!prop, ncf);
 
     if (!strcmp(state, "up")) {
+        FREE(path);
         xasprintf(&path, "/sys/class/net/%s/speed", ifname);
         ERR_NOMEM(path == NULL, ncf);
         speed = read_file(path, &length);
@@ -1059,7 +1132,8 @@ static void add_link_info(struct netcf *ncf,
             speed = strdup("0");
             ERR_NOMEM(!speed, ncf);
         }
-        ERR_THROW_STRERROR(!speed, ncf, EFILE, "Failed to read %s", path);
+        ERR_THROW_STRERROR(!speed, ncf, EFILE, "Failed to read %s : %s",
+                           path, errbuf);
         if ((nl = strchr(speed, '\n')))
             *nl = 0;
     } else {

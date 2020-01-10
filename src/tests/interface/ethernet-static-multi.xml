@@ -1,0 +1,10 @@
+<interface type="ethernet" name="eth1">
+  <start mode="onboot"/>
+  <protocol family="ipv4">
+    <ip address="192.168.0.5" prefix="24"/>
+    <ip address="1.2.3.4" prefix="8"/>
+    <ip address="172.16.0.24" prefix="16"/>
+    <ip address="24.5.3.2" prefix="18"/>
+    <route gateway="192.168.0.1"/>
+  </protocol>
+</interface>

@@ -2,7 +2,7 @@
  * drv_suse.c: the suse backend for netcf
  *
  * Copyright (C) 2010 Novell Inc.
- * Copyright (C) 2009-2014 Red Hat Inc.
+ * Copyright (C) 2009-2015 Red Hat Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -129,35 +129,55 @@ static const char *const subif_paths[] = {
     "BONDING_MASTER", "BRIDGE"
 };
 
-static int is_slave(struct netcf *ncf, const char *intf) {
+static int is_slave(struct netcf *ncf, const char *intf)
+{
+    augeas *aug = NULL;
+    char *escaped_intf = NULL;
+    int r = 0;
+
+    aug = get_augeas(ncf);
+    ERR_BAIL(ncf);
+
+    r = aug_escape_name_wrap(ncf, aug, intf, &escaped_intf);
+    ERR_NOMEM(r < 0, ncf);
+
     for (int s = 0; s < ARRAY_CARDINALITY(subif_paths); s++) {
-        int r;
         r = aug_fmt_match(ncf, NULL, "%s%s/ifcfg-%s/%s",
-                          aug_files, network_scripts_path, intf, subif_paths[s]);
+                          aug_files, network_scripts_path,
+                          escaped_intf ? escaped_intf : intf,
+                          subif_paths[s]);
         if (r != 0)
-            return r;
+            goto cleanup;
     }
-    return 0;
+ cleanup:
+ error:
+    FREE(escaped_intf);
+    return r;
 }
 
 static bool has_ifcfg_file(struct netcf *ncf, const char *name) {
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
+    char *escaped_name = NULL;
     char *path = NULL;
     int nmatches = 0, r;
 
     aug = get_augeas(ncf);
     ERR_BAIL(ncf);
 
+    r = aug_escape_name_wrap(aug, name, &escaped_name);
+    ERR_NOMEM(r < 0, ncf);
+
     /* if ifcfg-NAME exists, true */
-    r = xasprintf(&path, "%s/%s/ifcfg-%s", aug_files, network_scripts_path, name);
+    r = xasprintf(&path, "%s/%s/ifcfg-%s", aug_files, network_scripts_path,
+                  escaped_name ? escaped_name : name);
     ERR_NOMEM(r < 0, ncf);
 
     nmatches = aug_match(aug, path, NULL);
     ERR_COND_BAIL(nmatches < 0, ncf, EOTHER);
 
-    FREE(path);
-
 error:
+    FREE(path);
+    FREE(escaped_name);
     return nmatches > 0;
 }
 
@@ -251,7 +271,7 @@ static int find_hwaddr_by_device(struct netcf *ncf, const char *name,
                                  const char **addr) {
     int nmatches = 0, r;
     char **matches = NULL;
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
     char *path = NULL;
 
     aug = get_augeas(ncf);
@@ -282,32 +302,36 @@ static int find_hwaddr_by_device(struct netcf *ncf, const char *name,
  * in /etc/sysconfig/network-scripts/network-functions
  */
 static char *find_ifcfg_path(struct netcf *ncf, const char *name) {
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
+    char *escaped_name = NULL;
     char *path = NULL;
     int r, nmatches;
 
     aug = get_augeas(ncf);
     ERR_BAIL(ncf);
 
+    r = aug_escape_name_wrap(aug, name, &escaped_name);
+    ERR_NOMEM(r < 0, ncf);
+
     /* if ifcfg-NAME exists, use that */
-    r = xasprintf(&path, "%s/%s/ifcfg-%s", aug_files, network_scripts_path, name);
+    r = xasprintf(&path, "%s/%s/ifcfg-%s", aug_files, network_scripts_path,
+                  escaped_name ? escaped_name : name);
     ERR_NOMEM(r < 0, ncf);
 
     nmatches = aug_match(aug, path, NULL);
     ERR_COND_BAIL(nmatches < 0, ncf, EOTHER);
 
-    if (nmatches == 1)
-        return path;
-
+ cleanup:
+    FREE(escaped_name);
+    return path;
  error:
     FREE(path);
-
-    return NULL;
+    goto cleanup;
 }
 
 static int list_interfaces(struct netcf *ncf, char ***intf) {
     int nint = 0, result = 0;
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
 
     aug = get_augeas(ncf);
     ERR_BAIL(ncf);
@@ -388,7 +412,7 @@ void drv_entry(struct netcf *ncf) {
 static int list_interface_ids(struct netcf *ncf,
                               int maxnames, char **names,
                               unsigned int flags) {
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
     int nint = 0, nqualified = 0, result = 0;
     char **intf = NULL;
 
@@ -444,7 +468,7 @@ struct netcf_if *drv_lookup_by_name(struct netcf *ncf, const char *name) {
     struct netcf_if *nif = NULL;
     char *pathx = NULL;
     char *name_dup = NULL;
-    struct augeas *aug;
+    augeas *aug;
 
     aug = get_augeas(ncf);
     ERR_BAIL(ncf);
@@ -475,7 +499,8 @@ struct netcf_if *drv_lookup_by_name(struct netcf *ncf, const char *name) {
  * xml/augeas.rng)
  */
 static xmlDocPtr aug_get_xml(struct netcf_if *nif, int nint, char **intf) {
-    struct augeas *aug;
+    augeas *aug;
+    char *escaped_intf = NULL;
     xmlDocPtr result = NULL;
     xmlNodePtr root = NULL, tree = NULL;
     char **matches = NULL;
@@ -494,8 +519,14 @@ static xmlDocPtr aug_get_xml(struct netcf_if *nif, int nint, char **intf) {
     for (int i=0; i < nint; i++) {
         tree = xmlNewChild(root, NULL, BAD_CAST "tree", NULL);
         xmlNewProp(tree, BAD_CAST "path", BAD_CAST intf[i]);
+
+        FREE(escaped_intf);
+        r = aug_escape_name_wrap(ncf, aug, intf[i], &escaped_intf);
+        ERR_NOMEM(r < 0, ncf);
+
         nmatches = aug_fmt_match(ncf, &matches, "%s%s/ifcfg-%s/%s",
-                                 aug_files, network_scripts_path, intf[i], "*");
+                                 aug_files, network_scripts_path,
+                                 escaped_intf ? escaped_intf : intf[i], "*");
         ERR_COND_BAIL(nint < 0, ncf, EOTHER);
         for (int j = 0; j < nmatches; j++) {
             xmlNodePtr node = xmlNewChild(tree, NULL, BAD_CAST "node", NULL);
@@ -503,7 +534,7 @@ static xmlDocPtr aug_get_xml(struct netcf_if *nif, int nint, char **intf) {
             xmlNewProp(node, BAD_CAST "label",
                        BAD_CAST matches[j] + pathoffset + strlen(intf[i]) + 1);
             r = aug_get(aug, matches[j], &value);
-            ERR_COND_BAIL(r < 0, ncf, EOTHER);
+            ERR_COND_BAIL(r != 1 || !value, ncf, EOTHER);
             xmlNewProp(node, BAD_CAST "value", BAD_CAST value);
         }
         {
@@ -514,7 +545,7 @@ static xmlDocPtr aug_get_xml(struct netcf_if *nif, int nint, char **intf) {
         }
         {
             const char *mac = NULL;
-            if( find_hwaddr_by_device(ncf, nif->name, &mac) > 0 ) {
+            if(find_hwaddr_by_device(ncf, nif->name, &mac) > 0 && mac) {
                 xmlNodePtr node = xmlNewChild(tree, NULL, BAD_CAST "node", NULL);
                 xmlNewProp(node, BAD_CAST "label",
                            BAD_CAST "HWADDR" );
@@ -524,11 +555,13 @@ static xmlDocPtr aug_get_xml(struct netcf_if *nif, int nint, char **intf) {
         free_matches(nmatches, &matches);
     }
 
+    FREE(escaped_intf);
     return result;
 
  error:
     free_matches(nmatches, &matches);
     xmlFreeDoc(result);
+    FREE(escaped_intf);
     return NULL;
 }
 
@@ -538,7 +571,7 @@ static int aug_put_xml(struct netcf *ncf, xmlDocPtr xml) {
     char *path = NULL, *lpath = NULL, *label = NULL, *value = NULL;
     char *device = NULL, *mac = NULL, *gateway = NULL;
     char **rules = NULL;
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
     int result = -1, nrules = 0, ethphysical = 0;
     int toplevel = 1;
     int r;
@@ -868,16 +901,27 @@ static bool is_bond(struct netcf *ncf, const char *name) {
 
 /* The device NAME is a bridge if it has an entry TYPE=Bridge */
 static bool is_bridge(struct netcf *ncf, const char *name) {
+    augeas *aug;
+    char *escaped_name = NULL;
     int nmatches = 0;
+
+    aug = get_augeas(ncf);
+    ERR_BAIL(ncf);
+
+    r = aug_escape_name_wrap(ncf, aug, name, &escaped_name);
+    ERR_NOMEM(r < 0, ncf);
 
     nmatches = aug_fmt_match(ncf, NULL,
                              "%s%s/ifcfg-%s[ BRIDGE = 'yes' ]",
-                             aug_files, network_scripts_path, name);
+                             aug_files, network_scripts_path,
+                             escaped_name ? escaped_name : name);
+ error:
+    FREE(escaped_name);
     return nmatches > 0;
 }
 
 static int bridge_slaves(struct netcf *ncf, const char *name, char ***slaves) {
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
     int r, nslaves = 0;
 
     aug = get_augeas(ncf);
@@ -890,7 +934,7 @@ static int bridge_slaves(struct netcf *ncf, const char *name, char ***slaves) {
         char *p = (*slaves)[i];
         const char *dev;
         r = aug_get(aug, p, &dev);
-        ERR_COND_BAIL(r < 0, ncf, EOTHER);
+        ERR_COND_BAIL(r != 1 || !dev, ncf, EOTHER);
 
         (*slaves)[i] = strdup(dev);
         free(p);
@@ -909,23 +953,29 @@ static void rm_interface(struct netcf *ncf, const char *name) {
     int r;
     char *path = NULL;
     char **rules = NULL;
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
+    char *escaped_name = NULL;
     int nrules = 0;
 
     aug = get_augeas(ncf);
     ERR_BAIL(ncf);
 
+    r = aug_escape_name_wrap(ncf, aug, name, &escaped_name);
+    ERR_NOMEM(r < 0, ncf);
+
     /* The last or clause catches slaves of a bond that are enslaved to
      * a bridge NAME */
     r = xasprintf(&path, "%s/%s/ifcfg-%s",
-                  aug_files, network_scripts_path, name);
+                  aug_files, network_scripts_path,
+                  escaped_name ? escaped_name : name);
     ERR_NOMEM(r < 0, ncf);
 
     r = aug_rm(aug, path);
     ERR_COND_BAIL(r < 0, ncf, EOTHER);
 
     nrules = aug_fmt_match(ncf, &rules, "%s/%s/%s",
-                           aug_files, udev_netrule_path, name);
+                           aug_files, udev_netrule_path,
+                           escaped_name ? escaped_name : name);
     ERR_COND_BAIL(nrules < 0, ncf, EINTERNAL);
 
     while(nrules > 0) {
@@ -935,6 +985,7 @@ static void rm_interface(struct netcf *ncf, const char *name) {
     free_matches(nrules, &rules);
 
  error:
+    FREE(escaped_name);
     FREE(path);
 }
 
@@ -1007,10 +1058,6 @@ struct netcf_if *drv_define(struct netcf *ncf, const char *xml_str) {
     xmlDocPtr ncf_xml = NULL, aug_xml = NULL;
     char *name = NULL;
     struct netcf_if *result = NULL;
-    int r;
-    struct augeas *aug = get_augeas(ncf);
-
-    ERR_BAIL(ncf);
 
     ncf_xml = parse_xml(ncf, xml_str);
     ERR_BAIL(ncf);
@@ -1036,12 +1083,8 @@ struct netcf_if *drv_define(struct netcf *ncf, const char *xml_str) {
     bond_setup(ncf, name, true);
     ERR_BAIL(ncf);
 
-    r = aug_save(aug);
-    if (r < 0 && NCF_DEBUG(ncf)) {
-        fprintf(stderr, "Errors from aug_save:\n");
-        aug_print(aug, stderr, "/augeas//error");
-    }
-    ERR_THROW(r < 0, ncf, EOTHER, "aug_save failed");
+    aug_save_assert(ncf);
+    ERR_BAIL(ncf);
 
     result = make_netcf_if(ncf, name);
     ERR_BAIL(ncf);
@@ -1056,12 +1099,7 @@ struct netcf_if *drv_define(struct netcf *ncf, const char *xml_str) {
 }
 
 int drv_undefine(struct netcf_if *nif) {
-    struct augeas *aug = NULL;
     struct netcf *ncf = nif->ncf;
-    int r;
-
-    aug = get_augeas(ncf);
-    ERR_BAIL(ncf);
 
     bond_setup(ncf, nif->name, false);
     ERR_BAIL(ncf);
@@ -1069,8 +1107,8 @@ int drv_undefine(struct netcf_if *nif) {
     rm_interface(ncf, nif->name);
     ERR_BAIL(ncf);
 
-    r = aug_save(aug);
-    ERR_COND_BAIL(r < 0, ncf, EOTHER);
+    aug_save_assert(ncf);
+    ERR_BAIL(ncf);
 
     return 0;
  error:
@@ -1080,7 +1118,7 @@ int drv_undefine(struct netcf_if *nif) {
 int drv_lookup_by_mac_string(struct netcf *ncf, const char *mac,
                              int maxifaces, struct netcf_if **ifaces)
 {
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
     char *path = NULL, *ifcfg = NULL;
     const char **names = NULL;
     int nmatches = 0;

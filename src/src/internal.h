@@ -1,7 +1,7 @@
 /*
  * internal.h: importantdefinitions used through netcf
  *
- * Copyright (C) 2009 Red Hat Inc.
+ * Copyright (C) 2009-2011, 2015 Red Hat Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -26,6 +26,7 @@
 #include <config.h>
 #include "netcf.h"
 #include "datadir.h"
+# include "c-strcase.h"
 
 #include <string.h>
 #include <stdarg.h>
@@ -84,9 +85,6 @@
 #define ATTRIBUTE_NOINLINE
 #endif                                   /* __GNUC__ */
 
-#ifndef WIN32
-#define DATADIR NETCF_DATADIR
-#endif
 /* This needs ATTRIBUTE_RETURN_CHECK */
 #include "ref.h"
 
@@ -98,13 +96,21 @@
 #define MEMZERO(ptr, n) memset((ptr), 0, (n) * sizeof(*(ptr)));
 
 /* String equality tests, suggested by Jim Meyering. */
-#define STREQ(a,b) (strcmp((a),(b)) == 0)
-#define STRCASEEQ(a,b) (strcasecmp((a),(b)) == 0)
-#define STRCASEEQLEN(a,b,n) (strncasecmp((a),(b),(n)) == 0)
-#define STRNEQ(a,b) (strcmp((a),(b)) != 0)
-#define STRCASENEQ(a,b) (strcasecmp((a),(b)) != 0)
-#define STREQLEN(a,b,n) (strncmp((a),(b),(n)) == 0)
-#define STRNEQLEN(a,b,n) (strncmp((a),(b),(n)) != 0)
+# define STREQ(a, b) (strcmp(a, b) == 0)
+# define STRCASEEQ(a, b) (c_strcasecmp(a, b) == 0)
+# define STRNEQ(a, b) (strcmp(a, b) != 0)
+# define STRCASENEQ(a, b) (c_strcasecmp(a, b) != 0)
+# define STREQLEN(a, b, n) (strncmp(a, b, n) == 0)
+# define STRCASEEQLEN(a, b, n) (c_strncasecmp(a, b, n) == 0)
+# define STRNEQLEN(a, b, n) (strncmp(a, b, n) != 0)
+# define STRCASENEQLEN(a, b, n) (c_strncasecmp(a, b, n) != 0)
+# define STRPREFIX(a, b) (strncmp(a, b, strlen(b)) == 0)
+# define STRSKIP(a, b) (STRPREFIX(a, b) ? (a) + strlen(b) : NULL)
+
+# define STREQ_NULLABLE(a, b)                           \
+    ((a) ? (b) && STREQ((a) ? (a) : "", (b) ? (b) : "") : !(b))
+# define STRNEQ_NULLABLE(a, b)                          \
+    ((a) ? !(b) || STRNEQ((a) ? (a) : "", (b) ? (b) : "") : !!(b))
 
 #define ERR_COND(cond, ncf, err) \
     if (cond) (ncf)->errcode = (NETCF_##err)

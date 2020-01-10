@@ -1,7 +1,7 @@
 /*
  * drv_redhat.c: the Red Hat distro family backend for netcf
  *
- * Copyright (C) 2009-2014 Red Hat Inc.
+ * Copyright (C) 2009-2015 Red Hat Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -131,7 +131,7 @@ static char *find_ifcfg_path_by_hwaddr(struct netcf *ncf, const char *mac) {
 
     int nhwaddr = 0, r;
     char **hwaddr = NULL;
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
 
     aug = get_augeas(ncf);
     ERR_BAIL(ncf);
@@ -148,7 +148,7 @@ static char *find_ifcfg_path_by_hwaddr(struct netcf *ncf, const char *mac) {
     for (int i=0; i < nhwaddr; i++) {
         const char *addr;
         r = aug_get(aug, hwaddr[i], &addr);
-        ERR_COND_BAIL(r != 1, ncf, EOTHER);
+        ERR_COND_BAIL(r != 1 || !addr, ncf, EOTHER);
         if (STRCASEEQ(addr, mac))
             match = i;
     }
@@ -170,9 +170,6 @@ static char *find_ifcfg_path_by_hwaddr(struct netcf *ncf, const char *mac) {
 static char *find_ifcfg_path_by_device(struct netcf *ncf, const char *name) {
     int ndevs = 0;
     char **devs = NULL;
-
-    get_augeas(ncf);
-    ERR_BAIL(ncf);
 
     ndevs = aug_fmt_match(ncf, &devs, "%s[DEVICE = '%s']",
                           ifcfg_path, name);
@@ -199,7 +196,8 @@ static char *find_ifcfg_path_by_device(struct netcf *ncf, const char *name) {
  * in /etc/sysconfig/network-scripts/network-functions
  */
 static char *find_ifcfg_path(struct netcf *ncf, const char *name) {
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
+    char *escaped_name = NULL;
     char *path = NULL;
     const char *mac = NULL;
     int r, nmatches;
@@ -207,35 +205,40 @@ static char *find_ifcfg_path(struct netcf *ncf, const char *name) {
     aug = get_augeas(ncf);
     ERR_BAIL(ncf);
 
+    r = aug_escape_name_wrap(ncf, aug, name, &escaped_name);
+    ERR_NOMEM(r < 0, ncf);
+
     /* if ifcfg-NAME exists, use that */
-    r = xasprintf(&path, "%s/ifcfg-%s", network_scripts_path, name);
+    r = xasprintf(&path, "%s/ifcfg-%s", network_scripts_path,
+                  escaped_name ? escaped_name : name);
     ERR_NOMEM(r < 0, ncf);
 
     nmatches = aug_match(aug, path, NULL);
     ERR_COND_BAIL(nmatches < 0, ncf, EOTHER);
 
     if (nmatches == 1)
-        return path;
+        goto cleanup;
 
     FREE(path);
 
     /* Now find the config by MAC, matching on HWADDR */
     r = aug_get_mac(ncf, name, &mac);
     ERR_COND_BAIL(r < 0, ncf, EOTHER);
-    if (r > 0) {
+    if (r > 0 && mac) {
         path = find_ifcfg_path_by_hwaddr(ncf, mac);
         ERR_BAIL(ncf);
         if (path != NULL)
-            return path;
+            goto cleanup;
     }
 
     path = find_ifcfg_path_by_device(ncf, name);
     ERR_BAIL(ncf);
-
+ cleanup:
+    FREE(escaped_name);
     return path;
  error:
     FREE(path);
-    return NULL;
+    goto cleanup;
 }
 
 /* Given NDEVS path to DEVICE entries which may contain duplicate devices,
@@ -245,7 +248,7 @@ static char *find_ifcfg_path(struct netcf *ncf, const char *name) {
 static int uniq_ifcfg_paths(struct netcf *ncf,
                             int ndevs, char **devs,
                             char ***intf) {
-    struct augeas *aug;
+    augeas *aug;
     int r;
     int ndevnames = 0;
     const char **devnames = NULL;
@@ -260,7 +263,7 @@ static int uniq_ifcfg_paths(struct netcf *ncf,
     for (int i=0; i < ndevs; i++) {
         const char *name = NULL;
         r = aug_get(aug, devs[i], &name);
-        ERR_COND_BAIL(r != 1, ncf, EOTHER);
+        ERR_COND_BAIL(r != 1 || !name, ncf, EOTHER);
         int exists = 0;
         for (int j = 0; j < ndevnames; j++)
             if (STREQ(name, devnames[j])) {
@@ -313,9 +316,6 @@ static int list_ifcfg_paths(struct netcf *ncf, char ***intf) {
 
 static int list_interfaces(struct netcf *ncf, char ***intf) {
     int nint = 0, result = 0;
-
-    get_augeas(ncf);
-    ERR_BAIL(ncf);
 
     /* Look in augeas for all interfaces */
     nint = list_ifcfg_paths(ncf, intf);
@@ -399,7 +399,7 @@ static int list_interface_ids(struct netcf *ncf,
                               int maxnames, char **names,
                               unsigned int flags,
                               const char *id_attr) {
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
     int nint = 0, nmatches = 0, nqualified = 0, result = 0, r;
     char **intf = NULL, **matches = NULL;
 
@@ -420,7 +420,7 @@ static int list_interface_ids(struct netcf *ncf,
                                 == (NETCF_IFACE_ACTIVE|NETCF_IFACE_INACTIVE));
 
             r = aug_get(aug, matches[nmatches-1], &name);
-            ERR_COND_BAIL(r < 0, ncf, EOTHER);
+            ERR_COND_BAIL(r != 1 || !name, ncf, EOTHER);
 
             if (!is_qualified) {
                 int is_active = if_is_active(ncf, name);
@@ -463,9 +463,6 @@ struct netcf_if *drv_lookup_by_name(struct netcf *ncf, const char *name) {
     char *pathx = NULL;
     char *name_dup = NULL;
 
-    get_augeas(ncf);
-    ERR_BAIL(ncf);
-
     pathx = find_ifcfg_path(ncf, name);
     ERR_BAIL(ncf);
 
@@ -492,7 +489,7 @@ struct netcf_if *drv_lookup_by_name(struct netcf *ncf, const char *name) {
  * xml/augeas.rng)
  */
 static xmlDocPtr aug_get_xml(struct netcf *ncf, int nint, char **intf) {
-    struct augeas *aug;
+    augeas *aug;
     xmlDocPtr result = NULL;
     xmlNodePtr root = NULL, tree = NULL;
     char **matches = NULL;
@@ -516,7 +513,7 @@ static xmlDocPtr aug_get_xml(struct netcf *ncf, int nint, char **intf) {
             xmlNewProp(node, BAD_CAST "label",
                        BAD_CAST matches[j] + strlen(intf[i]) + 1);
             r = aug_get(aug, matches[j], &value);
-            ERR_COND_BAIL(r < 0, ncf, EOTHER);
+            ERR_COND_BAIL(r != 1 || !value, ncf, EOTHER);
             xmlNewProp(node, BAD_CAST "value", BAD_CAST value);
         }
         free_matches(nmatches, &matches);
@@ -534,7 +531,7 @@ static xmlDocPtr aug_get_xml(struct netcf *ncf, int nint, char **intf) {
 static int aug_put_xml(struct netcf *ncf, xmlDocPtr xml) {
     xmlNodePtr forest;
     char *path = NULL, *lpath = NULL, *label = NULL, *value = NULL;
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
     int result = -1;
     int r;
 
@@ -744,7 +741,7 @@ static bool is_bridge(struct netcf *ncf, const char *name) {
 }
 
 static int bridge_slaves(struct netcf *ncf, const char *name, char ***slaves) {
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
     int r, nslaves = 0;
 
     aug = get_augeas(ncf);
@@ -757,7 +754,7 @@ static int bridge_slaves(struct netcf *ncf, const char *name, char ***slaves) {
         char *p = (*slaves)[i];
         const char *dev;
         r = aug_get(aug, p, &dev);
-        ERR_COND_BAIL(r < 0, ncf, EOTHER);
+        ERR_COND_BAIL(r != 1 || !dev, ncf, EOTHER);
 
         (*slaves)[i] = strdup(dev);
         free(p);
@@ -775,7 +772,7 @@ static int bridge_slaves(struct netcf *ncf, const char *name, char ***slaves) {
 static void rm_interface(struct netcf *ncf, const char *name) {
     int r;
     char *path = NULL;
-    struct augeas *aug = NULL;
+    augeas *aug = NULL;
 
     aug = get_augeas(ncf);
     ERR_BAIL(ncf);
@@ -865,10 +862,6 @@ struct netcf_if *drv_define(struct netcf *ncf, const char *xml_str) {
     xmlDocPtr ncf_xml = NULL, aug_xml = NULL;
     char *name = NULL;
     struct netcf_if *result = NULL;
-    int r;
-    struct augeas *aug = get_augeas(ncf);
-
-    ERR_BAIL(ncf);
 
     ncf_xml = parse_xml(ncf, xml_str);
     ERR_BAIL(ncf);
@@ -894,12 +887,8 @@ struct netcf_if *drv_define(struct netcf *ncf, const char *xml_str) {
     bond_setup(ncf, name, true);
     ERR_BAIL(ncf);
 
-    r = aug_save(aug);
-    if (r < 0 && NCF_DEBUG(ncf)) {
-        fprintf(stderr, "Errors from aug_save:\n");
-        aug_print(aug, stderr, "/augeas//error");
-    }
-    ERR_THROW(r < 0, ncf, EOTHER, "aug_save failed");
+    aug_save_assert(ncf);
+    ERR_BAIL(ncf);
 
     result = make_netcf_if(ncf, name);
     ERR_BAIL(ncf);
@@ -914,12 +903,7 @@ struct netcf_if *drv_define(struct netcf *ncf, const char *xml_str) {
 }
 
 int drv_undefine(struct netcf_if *nif) {
-    struct augeas *aug = NULL;
     struct netcf *ncf = nif->ncf;
-    int r;
-
-    aug = get_augeas(ncf);
-    ERR_BAIL(ncf);
 
     bond_setup(ncf, nif->name, false);
     ERR_BAIL(ncf);
@@ -927,8 +911,8 @@ int drv_undefine(struct netcf_if *nif) {
     rm_interface(ncf, nif->name);
     ERR_BAIL(ncf);
 
-    r = aug_save(aug);
-    ERR_COND_BAIL(r < 0, ncf, EOTHER);
+    aug_save_assert(ncf);
+    ERR_BAIL(ncf);
 
     return 0;
  error:
@@ -946,9 +930,6 @@ int drv_lookup_by_mac_string(struct netcf *ncf, const char *mac,
     int result = -1;
 
     MEMZERO(ifaces, maxifaces);
-
-    get_augeas(ncf);
-    ERR_BAIL(ncf);
 
     nmatches = aug_match_mac(ncf, mac, &matches);
     ERR_BAIL(ncf);
