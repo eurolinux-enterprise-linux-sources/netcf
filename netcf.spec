@@ -1,6 +1,6 @@
 Name:           netcf
 Version:        0.2.8
-Release:        1%{?dist}%{?extra_release}
+Release:        2%{?dist}%{?extra_release}
 Summary:        Cross-platform network configuration library
 
 Group:          System Environment/Libraries
@@ -19,6 +19,9 @@ BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 # during the %prep stage (using git, which is now required for an rpm
 # build)
 #
+
+Patch001: netcf-call-aug_load-at-most-once-per-second.patch
+Patch002: netcf-optimize-aug_match-query-for-all-ifcfg-files-related.patch
 
 # Default to skipping autoreconf.  Distros can change just this one
 # line (or provide a command-line override) if they backport any
@@ -212,6 +215,10 @@ fi
 %{_libdir}/pkgconfig/netcf.pc
 
 %changelog
+* Fri Jul 01 2016 Laine Stump <laine@redhat.com> - 0.2.8-2
+ - resolve rhbz#1268382
+ - resolve rhbz#1269613
+
 * Wed May 20 2015 Laine Stump <laine@redhat.com> - 0.2.8-1
  - Rebase to netcf-0.2.8
  - resolve rhbz#1165965 - CVE-2014-8119
