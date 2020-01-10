@@ -1,0 +1,105 @@
+From e62e49c97c5d2830cbb3f5ed970a8f9b268a9b3a Mon Sep 17 00:00:00 2001
+From: Laine Stump <laine@laine.org>
+Date: Thu, 13 Sep 2012 15:32:00 -0400
+Subject: [PATCH 1/2] Be sure to bail if get_augeas() fails
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1060297 (RHEL6.4.z)
+https://bugzilla.redhat.com/show_bug.cgi?id=1060298 (RHEL6.5.z)
+https://bugzilla.redhat.com/show_bug.cgi?id=1052156 (RHEL6.6)
+
+There were a few places where get_augeas() was called at the beginning
+of a function, but the function was allowed to continue as normal even
+if get_augeas() failed. This was disastrous if any augeas library
+function was subsequently called prior to checking for error status -
+get_augeas sets ncf->driver->augeas to NULL if there's an error, but
+aug_get/aug_put/aug_rm (and possibly others) dereference the aug
+pointer they are sent without checking for NULL.
+
+This patch assures that any caller of get_augeas() returns immediately
+if get_augeas() fails.
+
+(cherry picked from commit 93bdd73aa0ff29116018b2de868e2c4f9a19b531)
+
+Conflicts:
+	src/drv_debian.c - only exists upstream
+	src/drv_initscripts.c - copyright dates created conflict
+	src/drv_suse.c - only exists upstream
+---
+ src/drv_initscripts.c |  4 +++-
+ src/dutil_linux.c     | 10 +++++++++-
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/src/drv_initscripts.c b/src/drv_initscripts.c
+index 6ea5ccc..2f817fd 100644
+--- a/src/drv_initscripts.c
++++ b/src/drv_initscripts.c
+@@ -1,7 +1,7 @@
+ /*
+  * drv_initscripts.c: the initscripts backend for netcf
+  *
+- * Copyright (C) 2009-2013 Red Hat Inc.
++ * Copyright (C) 2009-2014 Red Hat Inc.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -873,6 +873,8 @@ struct netcf_if *drv_define(struct netcf *ncf, const char *xml_str) {
+     int r;
+     struct augeas *aug = get_augeas(ncf);
+ 
++    ERR_BAIL(ncf);
++
+     ncf_xml = parse_xml(ncf, xml_str);
+     ERR_BAIL(ncf);
+ 
+diff --git a/src/dutil_linux.c b/src/dutil_linux.c
+index 59b4cdd..0d741bb 100644
+--- a/src/dutil_linux.c
++++ b/src/dutil_linux.c
+@@ -1,7 +1,7 @@
+ /*
+  * dutil_linux.c: Linux utility functions for driver backends.
+  *
+- * Copyright (C) 2009, 2011, 2012 Red Hat Inc.
++ * Copyright (C) 2009-2012 Red Hat Inc.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -405,6 +405,8 @@ int defnode(struct netcf *ncf, const char *name, const char *value,
+     char *expr = NULL;
+     int r, created;
+ 
++    ERR_BAIL(ncf);
++
+     va_start(ap, format);
+     r = vasprintf (&expr, format, ap);
+     va_end (ap);
+@@ -497,6 +499,8 @@ int aug_get_mac(struct netcf *ncf, const char *intf, const char **mac) {
+     char *path;
+     struct augeas *aug = get_augeas(ncf);
+ 
++    ERR_BAIL(ncf);
++
+     r = xasprintf(&path, "/files/sys/class/net/%s/address/content", intf);
+     ERR_NOMEM(r < 0, ncf);
+ 
+@@ -518,6 +522,8 @@ void modprobed_alias_bond(struct netcf *ncf, const char *name) {
+     struct augeas *aug = get_augeas(ncf);
+     int r, nmatches;
+ 
++    ERR_BAIL(ncf);
++
+     nmatches = aug_fmt_match(ncf, NULL,
+                              "/files/etc/modprobe.d/*/alias[ . = '%s']",
+                              name);
+@@ -555,6 +561,8 @@ void modprobed_unalias_bond(struct netcf *ncf, const char *name) {
+     struct augeas *aug = get_augeas(ncf);
+     int r;
+ 
++    ERR_BAIL(ncf);
++
+     r = xasprintf(&path,
+          "/files/etc/modprobe.d/*/alias[ . = '%s'][modulename = 'bonding']",
+                   name);
+-- 
+1.8.5.3
+

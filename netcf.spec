@@ -1,6 +1,6 @@
 Name:           netcf
 Version:        0.1.9
-Release:        4%{?dist}%{?extra_release}
+Release:        4%{?dist}.2%{?extra_release}
 Summary:        Cross-platform network configuration library
 
 Group:          System Environment/Libraries
@@ -15,6 +15,8 @@ Patch3: netcf-netlink-Do-not-provide-caches-not-needed-and-only-co.patch
 Patch4: netcf-Fix-ipcalc_netmask.patch
 Patch5: netcf-check-IFF_RUNNING-before-considering-an-interface-ac.patch
 Patch6: netcf-wait-for-IFF_UP-and-IFF_RUNNING-after-calling-ifup.patch
+Patch7: netcf-Be-sure-to-bail-if-get_augeas-fails.patch
+Patch8: netcf-eliminate-use-of-uninitialized-data-when-getting-mac.patch
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
@@ -55,6 +57,8 @@ The libraries for %{name}.
 %patch4 -p1
 %patch5 -p1
 %patch6 -p1
+%patch7 -p1
+%patch8 -p1
 
 %build
 %configure --disable-static
@@ -91,6 +95,10 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/pkgconfig/netcf.pc
 
 %changelog
+* Mon Feb 03 2014 Laine Stump <laine@redhat.com> - 0.1.9-4.el6_5.2
+  - resolves rhbz#1060298
+  - libvirt crashes in aug_get() during stress test
+
 * Tue Aug 06 2013 Laine Stump <laine@redhat.com> - 0.1.9-4
   - resolves rhbz#844578
   - check IFF_RUNNING before considering and interface "active"
