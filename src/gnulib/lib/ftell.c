@@ -1,5 +1,5 @@
 /* An ftell() function that works around platform bugs.
-   Copyright (C) 2007-2011 Free Software Foundation, Inc.
+   Copyright (C) 2007-2014 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU Lesser General Public License as published by
@@ -20,16 +20,15 @@
 #include <stdio.h>
 
 #include <errno.h>
-/* Get off_t.  */
-#include <unistd.h>
+#include <limits.h>
 
 long
 ftell (FILE *fp)
 {
   /* Use the replacement ftello function with all its workarounds.  */
   off_t offset = ftello (fp);
-  if (offset == (long)offset)
-    return (long)offset;
+  if (LONG_MIN <= offset && offset <= LONG_MAX)
+    return /* (long) */ offset;
   else
     {
       errno = EOVERFLOW;

@@ -1,5 +1,5 @@
 Name:           netcf
-Version:        0.1.9
+Version:        0.2.4
 Release:        1%{?dist}%{?extra_release}
 Summary:        Cross-platform network configuration library
 
@@ -9,10 +9,54 @@ URL:            https://fedorahosted.org/netcf/
 Source0:        https://fedorahosted.org/released/%{name}/%{name}-%{version}.tar.gz
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
+# Default to skipping autoreconf.  Distros can change just this one
+# line (or provide a command-line override) if they backport any
+# patches that touch configure.ac or Makefile.am.
+%{!?enable_autotools:%define enable_autotools 0}
+
+# Fedora 20 / RHEL-7 are where netcf first uses systemd. Although earlier
+# Fedora has systemd, netcf still used sysvinit there.
+%if 0%{?fedora} >= 20 || 0%{?rhel} >= 7
+    %define with_systemd 1
+%else
+    %define with_systemd 0
+%endif
+
+%if %{with_systemd}
+BuildRequires: systemd-units
+Requires(post): systemd-units
+Requires(post): systemd-sysv
+Requires(preun): systemd-units
+Requires(postun): systemd-units
+%endif
+%if 0%{?enable_autotools}
+BuildRequires: autoconf
+BuildRequires: automake
+BuildRequires: gettext-devel
+BuildRequires: libtool
+BuildRequires: /usr/bin/pod2man
+%endif
+
 BuildRequires:  readline-devel augeas-devel >= 0.5.2
 BuildRequires:  libxml2-devel libxslt-devel
+
+# force the --with-libnl1 option on F17/RHEL6 and earlier
+%if (0%{?fedora} && 0%{?fedora} < 18) || (0%{?rhel} && 0%{?rhel} < 7)
+%define with_libnl1 1
+%else
+%define with_libnl1 0
+%endif
+
+# require libnl3 on F18/RHEL7 and later
+%if 0%{?fedora} >= 18 || 0%{?rhel} >= 7
+BuildRequires:  libnl3-devel
+%else
 BuildRequires:  libnl-devel
+%endif
+
 Requires:       %{name}-libs = %{version}-%{release}
+
+Provides: bundled(gnulib)
 
 %description
 Netcf is a library used to modify the network configuration of a
@@ -34,6 +78,10 @@ developing applications that use %{name}.
 Summary:        Libraries for %{name}
 Group:          System Environment/Libraries
 
+# bridge-utils is needed because /sbin/ifup calls brctl
+# if you create a bridge device
+Requires:       bridge-utils
+
 %description    libs
 The libraries for %{name}.
 
@@ -41,30 +89,76 @@ The libraries for %{name}.
 %setup -q
 
 %build
-%configure --disable-static
+%if %{with_libnl1}
+%define _with_libnl1 --with-libnl1
+%endif
+%if %{with_systemd}
+    %define sysinit --with-sysinit=systemd
+%else
+    %define sysinit --with-sysinit=initscripts
+%endif
+
+
+%if 0%{?enable_autotools}
+ autoreconf -if
+%endif
+
+%configure --disable-static \
+           %{?_with_libnl1} \
+           %{sysinit}
 make %{?_smp_mflags}
 
 %install
 rm -rf $RPM_BUILD_ROOT
-make install DESTDIR=$RPM_BUILD_ROOT INSTALL="%{__install} -p"
+make install DESTDIR=$RPM_BUILD_ROOT SYSTEMD_UNIT_DIR=%{_unitdir} \
+     INSTALL="%{__install} -p"
 find $RPM_BUILD_ROOT -name '*.la' -exec rm -f {} ';'
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
-%post libs -p /sbin/ldconfig
+%preun libs
 
-%postun libs -p /sbin/ldconfig
+%if %{with_systemd}
+    %systemd_preun netcf-transaction.service
+%else
+if [ $1 = 0 ]; then
+    /sbin/chkconfig --del netcf-transaction
+fi
+%endif
+
+%post libs
+
+/sbin/ldconfig
+%if %{with_systemd}
+    %systemd_post netcf-transaction.service
+    /bin/systemctl --no-reload enable netcf-transaction.service >/dev/null 2>&1 || :
+%else
+/sbin/chkconfig --add netcf-transaction
+%endif
+
+%postun libs
+
+/sbin/ldconfig
+%if %{with_systemd}
+    %systemd_postun netcf-transaction.service
+%endif
 
 %files
 %defattr(-,root,root,-)
 %{_bindir}/ncftool
+%{_mandir}/man1/ncftool.1*
 
 %files libs
 %defattr(-,root,root,-)
 %{_datadir}/netcf
 %{_libdir}/*.so.*
+%if %{with_systemd}
+%{_unitdir}/netcf-transaction.service
+%else
 %{_sysconfdir}/rc.d/init.d/netcf-transaction
+%endif
+%attr(0755, root, root) %{_libexecdir}/netcf-transaction.sh
 %doc AUTHORS COPYING NEWS
 
 %files devel
@@ -75,6 +169,51 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/pkgconfig/netcf.pc
 
 %changelog
+* Wed May 14 2014 Laine Stump <laine@redhat.com> - 0.2.4-1
+ - wait for IFF_UP and IFF_RUNNING after calling ifup
+ - don't require IFF_RUNNING for bridge devices
+ - avoid memory leak in debian when listing interfaces
+ - avoid use of uninitialized data when getting mac address
+   (fixes https://bugzilla.redhat.com/show_bug.cgi?id=1046594 )
+ - limit interface names to IFNAMSIZ-1 characters in length
+ - support systemd for netcf-transaction
+
+* Fri Dec 21 2012 Laine Stump <laine@redhat.com> - 0.2.3-1
+- eliminate calls to nl_cache_mngt_provide(), to avoid
+  non-threadsafe code in libnl (and because it isn't needed
+  anyway) (This non-threadsafe code could lead to a segfault)
+- portability fixes for FreeBSD
+- fix bug when a config file has two config parameters with
+  identical names
+- add HACKING document
+- always bail immediately if get_augeas fails (doing otherwise
+  could lead to a segfault)
+
+* Sat Aug 25 2012 Laine Stump <laine@redhat.com> - 0.2.2-1
+- specfile: require libnl3-devel for rpm builds on Fedora 18+ and
+  RHEL7+. Likewise, force libnl1 for F17- and RHEL6.x-, even if
+  libnl3-devel is installed.
+
+* Fri Aug 10 2012 Laine Stump <laine@redhat.com> - 0.2.1-1
+- update gnulib to fix broken build on systems with nwer glibc (which no
+  longer provides gets()).
+- add ncftool manpage
+- interfaces are only "active" if both UP and RUNNING.
+
+* Fri Jul 20 2012 Laine Stump <laine@redhat.com> - 0.2.0-1
+- add support for Ubuntu, debian, and Suse Linux. Also an
+  unfinished port for MS Windows.
+- added support for libnl-3 (which is incompatible with libnl-1 -
+  netcf will use whichever is available, preferring libnl-3 unless
+  told otherwise during configure stage)
+- add "bundled(gnulib)" to specfile to indicate that we use a local
+  copy of gnulib sources (used by Fedora/RHEL when determining the scope
+  of security bugs).
+- Fix ipcalc_netmask, which was trimming off the last digit in
+  character representations of full-length netmasks (all 4 octets
+  having 3 chars each)
+- other minor bugfixes
+
 * Tue Jul 26 2011 Laine Stump <laine@redhat.com> - 0.1.9-1
 - always add <bridge> element to bridge, even if there is no physdev present
 - don't log error if interface isn't found in kernel during status report
@@ -92,14 +231,14 @@ rm -rf $RPM_BUILD_ROOT
   to pulling in extra packages when building an application that uses netcf.
 - Reorganize code to simplify porting to other platforms.
 
-* Thu Sep 24 2010 Laine Stump <laine@redhat.com> - 0.1.7-1
+* Fri Sep 24 2010 Laine Stump <laine@redhat.com> - 0.1.7-1
 - remove code that modifies iptables config for bridges
 - register gnulib as a proper submodule
 - don't delete physical interface config when defining a vlan
 - properly handle quoted entries in sysconfig files.
 - make miimon/arpmon optional
 
-* Thu Apr 16 2010 Laine Stump <laine@redhat.com> - 0.1.6-1
+* Fri Apr 16 2010 Laine Stump <laine@redhat.com> - 0.1.6-1
 - New version
 
 * Mon Nov 30 2009 David Lutterkort <lutter@redhat.com> - 0.1.5-1

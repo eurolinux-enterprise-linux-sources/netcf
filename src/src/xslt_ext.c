@@ -72,10 +72,10 @@ static void ipcalc_netmask(xmlXPathParserContextPtr ctxt, int nargs) {
     struct in_addr netmask;
     xmlChar netmask_str[16];
 
-    netmask.s_addr = htonl(~((1 << (32 - prefix)) - 1));
+    netmask.s_addr = htonl(~(0xffffffffu >> prefix));
 
     if (! inet_ntop(AF_INET, &netmask,
-                    (char *) netmask_str, sizeof(netmask_str) - 1)) {
+                    (char *) netmask_str, sizeof(netmask_str))) {
         xsltTransformError(xsltXPathGetTransformContext(ctxt), NULL, NULL,
                     "ipcalc:netmask: internal error: inet_ntop failed");
         goto error;
@@ -107,7 +107,7 @@ static void ipcalc_prefix(xmlXPathParserContextPtr ctxt, int nargs) {
         goto error;
     }
 
-    r = inet_aton((char *) netmask_str, &netmask);
+    r = inet_pton(AF_INET, (char *) netmask_str, &netmask);
     if (r < 0) {
         xsltTransformError(xsltXPathGetTransformContext(ctxt), NULL, NULL,
                            "ipcalc:prefix: illegal netmask '%s'",

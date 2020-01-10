@@ -25,12 +25,20 @@
 
 #include <netlink/netlink.h>
 
+#ifndef HAVE_LIBNL3
+/* backwards compatibility for libnl-1.x */
+#define nl_sock nl_handle
+#define nl_socket_alloc()     nl_handle_alloc()
+#define nl_socket_free(x)     nl_handle_destroy(x)
+#define rtnl_link_get_type(x) rtnl_link_get_info_type(x)
+#endif
+
 struct driver {
     struct augeas     *augeas;
     xsltStylesheetPtr  put;
     xsltStylesheetPtr  get;
     int                ioctl_fd;
-    struct nl_handle  *nl_sock;
+    struct nl_sock     *nl_sock;
     struct nl_cache   *link_cache;
     struct nl_cache   *addr_cache;
     unsigned int       load_augeas : 1;
@@ -39,24 +47,16 @@ struct driver {
     const struct augeas_xfm_table **augeas_xfm_tables;
 };
 
-enum
-{
-    EXIT_DUP2=124,          /* dup2() of stdout/stderr in child failed */
-    EXIT_SIGMASK=125,       /* failed to reset signal mask of child */
-    EXIT_CANNOT_INVOKE=126, /* program located, but not usable. */
-    EXIT_ENOENT=127,        /* could not find program to execute */
-
-    /* any application-specific exit codes returned by the exec'ed
-     * binary should be in the range 193-199 to avoid various
-     *ambiguities (confusion with signals, truncation...
-     */
-    /* NB: the following code matches that in the netcf-transact script */
-    EXIT_INVALID_IN_THIS_STATE=199, /* wrong state to perform this operation */
+struct augeas_pv {
+    const char *const path;
+    const char *const value;
 };
 
-/* run an external program */
-int run_program(struct netcf *ncf, const char *const *argv, char **output);
-void run1(struct netcf *ncf, const char *prog, const char *arg);
+struct augeas_xfm_table {
+    unsigned int            size;
+    const struct augeas_pv *pv;
+};
+
 
 /* Add a table of transformations that the next GET_AUGEAS should run */
 int add_augeas_xfm_table(struct netcf *ncf,
@@ -78,6 +78,12 @@ int defnode(struct netcf *ncf, const char *name, const char *value,
    AUG_MATCH on that path. Sets NCF->ERRCODE on error */
 ATTRIBUTE_FORMAT(printf, 3, 4)
 int aug_fmt_match(struct netcf *ncf, char ***matches, const char *fmt, ...);
+
+ATTRIBUTE_FORMAT(printf, 3, 4)
+int aug_fmt_set(struct netcf *ncf, const char *value, const char *fmt, ...);
+
+ATTRIBUTE_FORMAT(printf, 2, 3)
+int aug_fmt_rm(struct netcf *ncf, const char *fmt, ...);
 
 /* Free matches from aug_match (or aug_submatch) */
 void free_matches(int nint, char ***intf);
@@ -102,9 +108,6 @@ void modprobed_alias_bond(struct netcf *ncf, const char *name);
 
 /* Remove an 'alias NAME bonding' as created by modprobed_alias_bond */
 void modprobed_unalias_bond(struct netcf *ncf, const char *name);
-
-/* Get a file descriptor to a ioctl socket */
-int init_ioctl_fd(struct netcf *ncf);
 
 /* setup the netlink socket */
 int netlink_init(struct netcf *ncf);
@@ -132,6 +135,9 @@ netcf_if_type_t if_type(struct netcf *ncf, const char *intf);
  * This pointer has an indefinite life, and shouldn't be / can't be free'd.
  */
 const char *if_type_str(netcf_if_type_t type);
+
+/* Retrieve the hw mac address of the interface INTF */
+int if_hwaddr(struct netcf *ncf, const char *intf, unsigned char *mac, int len);
 
 /* Add the state of the interface (currently all addresses + netmasks)
  * to its xml document.

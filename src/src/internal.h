@@ -84,6 +84,9 @@
 #define ATTRIBUTE_NOINLINE
 #endif                                   /* __GNUC__ */
 
+#ifndef WIN32
+#define DATADIR NETCF_DATADIR
+#endif
 /* This needs ATTRIBUTE_RETURN_CHECK */
 #include "ref.h"
 
@@ -128,6 +131,15 @@
             report_error(ncf, NETCF_##err, ## fmt);  \
             goto error;                              \
         }                                            \
+    } while(0)
+
+#define ERR_THROW_STRERROR(cond, ncf, err, fmt ...)     \
+    do {                                                \
+        if (cond) {                                     \
+            strerror_r(errno, errbuf, sizeof(errbuf));  \
+            report_error(ncf, NETCF_##err, ## fmt);     \
+            goto error;                                 \
+        }                                               \
     } while(0)
 
 /* Clear error code and details */

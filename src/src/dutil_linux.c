@@ -1,7 +1,7 @@
 /*
  * dutil_linux.c: Linux utility functions for driver backends.
  *
- * Copyright (C) 2009, 2011 Red Hat Inc.
+ * Copyright (C) 2009-2012, 2014 Red Hat Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -54,231 +54,49 @@
 #include "dutil.h"
 #include "dutil_linux.h"
 
+#ifndef HAVE_LIBNL3
 #include <net/if.h>
+#endif
 #include <netlink/socket.h>
 #include <netlink/cache.h>
 #include <netlink/route/addr.h>
 #include <netlink/route/link.h>
 
-/* For some reason, the headers for libnl vlan functions aren't installed */
+#ifdef HAVE_LIBNL3
+#define RTNL_LINK_NOT_FOUND 0
+
+/* Some distributions seem to never have shipped the vlan header with libnl1 */
+#include <netlink/route/link/vlan.h>
+#else
 extern int rtnl_link_vlan_get_id(struct rtnl_link *link);
+#endif
 
-/*
- * Executing external programs
- */
-
-static int
-exec_program(struct netcf *ncf,
-             const char *const*argv,
-             const char *commandline,
-             pid_t *pid,
-             int *outfd)
+static struct nl_cache *__rtnl_link_alloc_cache(struct nl_sock *sk)
 {
-    sigset_t oldmask, newmask;
-    struct sigaction sig_action;
-    char errbuf[128];
-    int pipeout[2] = {-1, -1};
+    struct nl_cache *cache;
 
-    /* commandline is only used for error reporting */
-    if (commandline == NULL)
-        commandline = argv[0];
+#ifdef HAVE_LIBNL3
+    if (rtnl_link_alloc_cache(sk, AF_UNSPEC, &cache) < 0)
+        return NULL;
+#elif HAVE_LIBNL
+    cache = rtnl_link_alloc_cache(sk);
+#endif
 
-    /* create a pipe to receive stdout+stderr from child */
-    if (outfd) {
-        if (pipe(pipeout) < 0) {
-            report_error(ncf, NETCF_EEXEC,
-                         "failed to create pipe while forking for '%s': %s",
-                         commandline, strerror_r(errno, errbuf, sizeof(errbuf)));
-            goto error;
-        }
-        *outfd = pipeout[0];
-    }
-
-    /*
-     * Need to block signals now, so that child process can safely
-     * kill off caller's signal handlers without a race.
-     */
-    sigfillset(&newmask);
-    if (pthread_sigmask(SIG_SETMASK, &newmask, &oldmask) != 0) {
-        report_error(ncf, NETCF_EEXEC,
-                     "failed to set signal mask while forking for '%s': %s",
-                     commandline, strerror_r(errno, errbuf, sizeof(errbuf)));
-        goto error;
-    }
-
-    *pid = fork();
-
-    ERR_THROW(*pid < 0, ncf, EEXEC, "failed to fork for '%s': %s",
-              commandline, strerror_r(errno, errbuf, sizeof(errbuf)));
-
-    if (*pid) { /* parent */
-        /* Restore our original signal mask now that the child is
-           safely running */
-        ERR_THROW(pthread_sigmask(SIG_SETMASK, &oldmask, NULL) != 0,
-                  ncf, EEXEC,
-                  "failed to restore signal mask while forking for '%s': %s",
-                  commandline, strerror_r(errno, errbuf, sizeof(errbuf)));
-
-        /* parent doesn't use write side of the pipe */
-        if (pipeout[1] >= 0)
-            close(pipeout[1]);
-
-        return 0;
-    }
-
-    /* child */
-
-    /* Clear out all signal handlers from parent so nothing unexpected
-       can happen in our child once we unblock signals */
-
-    sig_action.sa_handler = SIG_DFL;
-    sig_action.sa_flags = 0;
-    sigemptyset(&sig_action.sa_mask);
-
-    int i;
-    for (i = 1; i < NSIG; i++) {
-        /* Only possible errors are EFAULT or EINVAL
-           The former wont happen, the latter we
-           expect, so no need to check return value */
-
-        sigaction(i, &sig_action, NULL);
-    }
-
-    /* Unmask all signals in child, since we've no idea what the
-       caller's done with their signal mask and don't want to
-       propagate that to children */
-    sigemptyset(&newmask);
-    if (pthread_sigmask(SIG_SETMASK, &newmask, NULL) != 0) {
-        /* return a unique code and let the parent log the error */
-        _exit(EXIT_SIGMASK);
-    }
-
-    if (pipeout[1] >= 0) {
-        /* direct stdout and stderr to the pipe */
-        if (dup2(pipeout[1], fileno(stdout)) < 0
-            || dup2(pipeout[1], fileno(stderr)) < 0) {
-            /* return a unique code and let the parent log the error */
-            _exit(EXIT_DUP2);
-        }
-    }
-    /* child doesn't use the read side of the pipe */
-    if (pipeout[0] >= 0)
-        close(pipeout[0]);
-
-    /* close all open file descriptors */
-    int openmax = sysconf (_SC_OPEN_MAX);
-    for (i = 3; i < openmax; i++)
-        close(i);
-
-    execvp(argv[0], (char **) argv);
-
-    /* if execvp() returns, it has failed */
-    /* return a unique code and let the parent log the error */
-    _exit(errno == ENOENT ? EXIT_ENOENT : EXIT_CANNOT_INVOKE);
-
-error:
-    /* This is cleanup of parent process only - child
-       should never jump here on error */
-    if (pipeout[0] >= 0)
-        close(pipeout[0]);
-    if (pipeout[1] >= 0)
-        close(pipeout[1]);
-    if (outfd)
-        *outfd = -1;
-    return -1;
+    return cache;
 }
 
-/**
- * Run a command without using the shell.
- *
- * return 0 if the command run and exited with 0 status; Otherwise
- * return -1
- *
- */
-int run_program(struct netcf *ncf, const char *const *argv, char **output)
+static struct nl_cache *__rtnl_addr_alloc_cache(struct nl_sock *sk)
 {
+    struct nl_cache *cache;
 
-    pid_t childpid = -1;
-    int exitstatus, waitret;
-    char *argv_str;
-    int ret = -1;
-    char errbuf[128];
-    char *outtext = NULL;
-    int outfd = -1;
-    FILE *outfile = NULL;
-    size_t outlen;
+#ifdef HAVE_LIBNL3
+    if (rtnl_addr_alloc_cache(sk, &cache) < 0)
+        return NULL;
+#elif HAVE_LIBNL
+    cache = rtnl_addr_alloc_cache(sk);
+#endif
 
-    if (!output)
-        output = &outtext;
-
-    argv_str = argv_to_string(argv);
-    ERR_NOMEM(argv_str == NULL, ncf);
-
-    exec_program(ncf, argv, argv_str, &childpid, &outfd);
-    ERR_BAIL(ncf);
-
-    outfile = fdopen(outfd, "r");
-    ERR_THROW(outfile == NULL, ncf, EEXEC,
-              "Failed to create file stream for output while executing '%s': %s",
-              argv_str, strerror_r(errno, errbuf, sizeof(errbuf)));
-
-    *output = fread_file(outfile, &outlen);
-    ERR_THROW(*output == NULL, ncf, EEXEC,
-              "Error while reading output from execution of '%s': %s",
-              argv_str, strerror_r(errno, errbuf, sizeof(errbuf)));
-
-    /* finished with the stream. Close it so the child can exit. */
-    fclose(outfile);
-    outfile = NULL;
-
-    while ((waitret = waitpid(childpid, &exitstatus, 0) == -1) &&
-           errno == EINTR) {
-        /* empty loop */
-    }
-
-    ERR_THROW(waitret == -1, ncf, EEXEC,
-              "Failed waiting for completion of '%s': %s",
-              argv_str, strerror_r(errno, errbuf, sizeof(errbuf)));
-    ERR_THROW(!WIFEXITED(exitstatus) && WIFSIGNALED(exitstatus), ncf, EEXEC,
-              "'%s' terminated by signal: %d",
-              argv_str, WTERMSIG(exitstatus));
-    ERR_THROW(!WIFEXITED(exitstatus), ncf, EEXEC,
-              "'%s' terminated improperly", argv_str);
-    ERR_THROW(WEXITSTATUS(exitstatus) == EXIT_ENOENT, ncf, EEXEC,
-              "Running '%s' program not found", argv_str);
-    ERR_THROW(WEXITSTATUS(exitstatus) == EXIT_CANNOT_INVOKE, ncf, EEXEC,
-              "Running '%s' program located but not usable", argv_str);
-    ERR_THROW(WEXITSTATUS(exitstatus) == EXIT_SIGMASK, ncf, EEXEC,
-              "Running '%s' failed to reset child process signal mask",
-              argv_str);
-    ERR_THROW(WEXITSTATUS(exitstatus) == EXIT_DUP2, ncf, EEXEC,
-              "Running '%s' failed to dup2 child process stdout/stderr",
-              argv_str);
-    ERR_THROW(WEXITSTATUS(exitstatus) == EXIT_INVALID_IN_THIS_STATE, ncf, EINVALIDOP,
-              "Running '%s' operation is invalid in this state",
-              argv_str);
-    ERR_THROW(WEXITSTATUS(exitstatus) != 0, ncf, EEXEC,
-              "Running '%s' failed with exit code %d: %s",
-              argv_str, WEXITSTATUS(exitstatus), *output);
-    ret = 0;
-
-error:
-    if (outfile)
-        fclose(outfile);
-    else if (outfd >= 0)
-        close(outfd);
-    FREE(outtext);
-    FREE(argv_str);
-    return ret;
-}
-
-/* Run the program PROG with the single argument ARG */
-void run1(struct netcf *ncf, const char *prog, const char *arg) {
-    const char *const argv[] = {
-        prog, arg, NULL
-    };
-
-    run_program(ncf, argv, NULL);
+    return cache;
 }
 
 /*
@@ -403,7 +221,9 @@ int defnode(struct netcf *ncf, const char *name, const char *value,
     struct augeas *aug = get_augeas(ncf);
     va_list ap;
     char *expr = NULL;
-    int r, created;
+    int r = -1, created;
+
+    ERR_BAIL(ncf);
 
     va_start(ap, format);
     r = vasprintf (&expr, format, ap);
@@ -419,6 +239,63 @@ int defnode(struct netcf *ncf, const char *name, const char *value,
  error:
     free(expr);
     return (r < 0) ? -1 : created;
+}
+
+int aug_fmt_set(struct netcf *ncf, const char *value, const char *fmt, ...)
+{
+    struct augeas *aug = NULL;
+    char *path = NULL;
+    va_list args;
+    int r;
+
+    aug = get_augeas(ncf);
+    ERR_BAIL(ncf);
+
+    va_start(args, fmt);
+    r = vasprintf(&path, fmt, args);
+    va_end(args);
+    if (r < 0) {
+        path = NULL;
+        ERR_NOMEM(1, ncf);
+    }
+
+    r = aug_set(aug, path, value);
+    ERR_COND_BAIL(r < 0, ncf, EOTHER);
+
+    free(path);
+    return r;
+ error:
+    free(path);
+    return -1;
+}
+
+int aug_fmt_rm(struct netcf *ncf, const char *fmt, ...)
+{
+    struct augeas *aug = NULL;
+    char *path = NULL;
+    va_list args;
+    int r;
+
+    aug = get_augeas(ncf);
+    ERR_BAIL(ncf);
+
+    va_start(args, fmt);
+    r = vasprintf(&path, fmt, args);
+    va_end(args);
+    if (r < 0) {
+        path = NULL;
+        ERR_NOMEM(1, ncf);
+    }
+
+    r = aug_rm(aug, path);
+
+    ERR_COND_BAIL(r < 0, ncf, EOTHER);
+
+    free(path);
+    return r;
+ error:
+    free(path);
+    return -1;
 }
 
 int aug_fmt_match(struct netcf *ncf, char ***matches, const char *fmt, ...) {
@@ -493,9 +370,12 @@ int aug_match_mac(struct netcf *ncf, const char *mac, char ***matches) {
 
 /* Get the MAC address of the interface INTF */
 int aug_get_mac(struct netcf *ncf, const char *intf, const char **mac) {
-    int r;
-    char *path;
+    int r = -1;
+    char *path = NULL;
     struct augeas *aug = get_augeas(ncf);
+
+    *mac = NULL;
+    ERR_BAIL(ncf);
 
     r = xasprintf(&path, "/files/sys/class/net/%s/address/content", intf);
     ERR_NOMEM(r < 0, ncf);
@@ -517,6 +397,8 @@ void modprobed_alias_bond(struct netcf *ncf, const char *name) {
     char *path = NULL;
     struct augeas *aug = get_augeas(ncf);
     int r, nmatches;
+
+    ERR_BAIL(ncf);
 
     nmatches = aug_fmt_match(ncf, NULL,
                              "/files/etc/modprobe.d/*/alias[ . = '%s']",
@@ -555,6 +437,8 @@ void modprobed_unalias_bond(struct netcf *ncf, const char *name) {
     struct augeas *aug = get_augeas(ncf);
     int r;
 
+    ERR_BAIL(ncf);
+
     r = xasprintf(&path,
          "/files/etc/modprobe.d/*/alias[ . = '%s'][modulename = 'bonding']",
                   name);
@@ -570,28 +454,17 @@ void modprobed_unalias_bond(struct netcf *ncf, const char *name) {
  * ioctl and netlink-related utilities
  */
 
-int init_ioctl_fd(struct netcf *ncf) {
-    int ioctl_fd;
-    int flags;
-
-    ioctl_fd = socket(AF_INET, SOCK_STREAM, 0);
-    ERR_THROW(ioctl_fd < 0, ncf, EINTERNAL, "failed to open socket for interface ioctl");
-
-    flags = fcntl(ioctl_fd, F_GETFD);
-    ERR_THROW(flags < 0, ncf, EINTERNAL, "failed to get flags for ioctl socket");
-
-    flags = fcntl(ioctl_fd, F_SETFD, flags | FD_CLOEXEC);
-    ERR_THROW(flags < 0, ncf, EINTERNAL, "failed to set FD_CLOEXEC flag on ioctl socket");
-    return ioctl_fd;
-
-error:
-    if (ioctl_fd >= 0)
-        close(ioctl_fd);
-    return -1;
-}
-
 int if_is_active(struct netcf *ncf, const char *intf) {
     struct ifreq ifr;
+    short flags_to_check = IFF_UP;
+
+    /*
+     * IFF_RUNNING is set on a bridge only if there is at least one
+     * network device attached.
+     */
+    if(if_type(ncf, intf) != NETCF_IFACE_TYPE_BRIDGE) {
+        flags_to_check |= IFF_RUNNING;
+    }
 
     MEMZERO(&ifr, 1);
     strncpy(ifr.ifr_name, intf, sizeof(ifr.ifr_name));
@@ -599,7 +472,7 @@ int if_is_active(struct netcf *ncf, const char *intf) {
     if (ioctl(ncf->driver->ioctl_fd, SIOCGIFFLAGS, &ifr))  {
         return 0;
     }
-    return ((ifr.ifr_flags & IFF_UP) == IFF_UP);
+    return ((ifr.ifr_flags & flags_to_check) == flags_to_check);
 }
 
 netcf_if_type_t if_type(struct netcf *ncf, const char *intf) {
@@ -651,6 +524,40 @@ const char *if_type_str(netcf_if_type_t type) {
             return NULL;
     }
 }
+
+
+static size_t format_mac_addr(unsigned char *buf, int buflen,
+                                const unsigned char *addr, int len)
+{
+        int i;
+        char *cp = (char *)buf;
+
+        for (i = 0; i < len; i++) {
+                cp += snprintf(cp, buflen - (cp - (char *)buf), "%02x", addr[i]);
+                if (i == len - 1) {
+                       *cp = '\0';
+                        break;
+                }
+                strncpy(cp, ":", 1);
+               cp++;
+        }
+        return cp - (char *)buf;
+}
+
+int if_hwaddr(struct netcf *ncf, const char *intf,
+              unsigned char *mac, int buflen) {
+    struct ifreq ifr;
+    int ret;
+
+    MEMZERO(&ifr, 1);
+    strncpy(ifr.ifr_name, intf, sizeof(ifr.ifr_name));
+    ifr.ifr_name[sizeof(ifr.ifr_name) - 1] = '\0';
+    ret = ioctl(ncf->driver->ioctl_fd, SIOCGIFHWADDR, &ifr);
+    memcpy(mac,ifr.ifr_hwaddr.sa_data,6);
+    format_mac_addr(mac,buflen, (unsigned char *)ifr.ifr_hwaddr.sa_data,6);
+    return ret;
+}
+
 
 static int if_bridge_phys_name(struct netcf *ncf,
                                const char *intf, char ***phys_names) {
@@ -705,24 +612,19 @@ done:
 
 int netlink_init(struct netcf *ncf) {
 
-    ncf->driver->nl_sock = nl_handle_alloc();
+    ncf->driver->nl_sock = nl_socket_alloc();
     if (ncf->driver->nl_sock == NULL)
         goto error;
-    if (nl_connect(ncf->driver->nl_sock, NETLINK_ROUTE) < 0) {
+    if (nl_connect(ncf->driver->nl_sock, NETLINK_ROUTE) < 0)
         goto error;
-    }
 
-    ncf->driver->link_cache = rtnl_link_alloc_cache(ncf->driver->nl_sock);
-    if (ncf->driver->link_cache == NULL) {
+    ncf->driver->link_cache = __rtnl_link_alloc_cache(ncf->driver->nl_sock);
+    if (ncf->driver->link_cache == NULL)
         goto error;
-    }
-    nl_cache_mngt_provide(ncf->driver->link_cache);
 
-    ncf->driver->addr_cache = rtnl_addr_alloc_cache(ncf->driver->nl_sock);
-    if (ncf->driver->addr_cache == NULL) {
+    ncf->driver->addr_cache = __rtnl_addr_alloc_cache(ncf->driver->nl_sock);
+    if (ncf->driver->addr_cache == NULL)
         goto error;
-    }
-    nl_cache_mngt_provide(ncf->driver->addr_cache);
 
     int netlink_fd = nl_socket_get_fd(ncf->driver->nl_sock);
     if (netlink_fd >= 0)
@@ -746,7 +648,7 @@ int netlink_close(struct netcf *ncf) {
     }
     if (ncf->driver->nl_sock) {
         nl_close(ncf->driver->nl_sock);
-        nl_handle_destroy(ncf->driver->nl_sock);
+        nl_socket_free(ncf->driver->nl_sock);
         ncf->driver->nl_sock = NULL;
     }
     return 0;
@@ -909,7 +811,7 @@ static void add_ethernet_info(struct netcf *ncf,
     struct rtnl_link *filter_link = NULL;
 
     /* if interface isn't currently available, nothing to add */
-    if (ifindex != RTNL_LINK_NOT_FOUND)
+    if (ifindex == RTNL_LINK_NOT_FOUND)
         return;
 
     filter_link = rtnl_link_alloc();
@@ -950,7 +852,7 @@ static void add_vlan_info_cb(struct nl_object *obj, void *arg) {
     if (cb_data->vlan != NULL)
         return;
 
-    link_type = rtnl_link_get_info_type(iflink);
+    link_type = rtnl_link_get_type(iflink);
     if ((link_type == NULL) || STRNEQ(link_type, "vlan"))
         return;
 
@@ -998,7 +900,7 @@ static void add_vlan_info(struct netcf *ncf,
     struct rtnl_link *filter_link = NULL;
 
     /* if interface isn't currently available, nothing to add */
-    if (ifindex != RTNL_LINK_NOT_FOUND)
+    if (ifindex == RTNL_LINK_NOT_FOUND)
         return;
 
     filter_link = rtnl_link_alloc();
@@ -1018,8 +920,8 @@ error:
 static void add_bridge_info(struct netcf *ncf,
                             const char *ifname, int ifindex ATTRIBUTE_UNUSED,
                             xmlDocPtr doc, xmlNodePtr root) {
-    char **phys_names;
-    int  nphys, ii;
+    char **phys_names = NULL;
+    int  nphys = 0, ii;
     xmlNodePtr bridge_node = NULL, interface_node = NULL;
 
     /* The <bridge> element is required by the grammar, so always add
@@ -1113,7 +1015,7 @@ static void add_bond_info(struct netcf *ncf,
         = { doc, root, NULL, ifindex, ncf };
 
     /* if interface isn't currently available, nothing to add */
-    if (ifindex != RTNL_LINK_NOT_FOUND)
+    if (ifindex == RTNL_LINK_NOT_FOUND)
         return;
 
     nl_cache_foreach(ncf->driver->link_cache, add_bond_info_cb, &cb_data);
